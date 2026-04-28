@@ -44,8 +44,18 @@ pub fn draw_screw(painter: &egui::Painter, cx: f32, cy: f32, radius: f32) {
     }
 }
 
-/// Horizontal panel groove — used to separate rows of knobs.
+/// Set once at editor startup when the baked chassis texture loads
+/// successfully. When true, `draw_groove` no-ops because the grooves are
+/// part of the bake. False = procedural fallback.
+pub static CHASSIS_BAKED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Horizontal panel groove — used to separate rows of knobs. Skipped when
+/// `CHASSIS_BAKED` is set (the bake includes real beveled groove cuts).
 pub fn draw_groove(painter: &egui::Painter, left: f32, right: f32, y: f32) {
+    if CHASSIS_BAKED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     painter.line_segment(
         [egui::pos2(left, y), egui::pos2(right, y)],
         egui::Stroke::new(1.0, theme::GROOVE_DARK),
@@ -73,11 +83,17 @@ pub fn draw_led(painter: &egui::Painter, cx: f32, cy: f32, on: bool) {
 
 /// Inset LCD-style display frame with scan-lines and a red ambient glow.
 pub fn draw_inset_display(painter: &egui::Painter, x: f32, y: f32, w: f32, h: f32) {
-    painter.rect_filled(
-        egui::Rect::from_min_size(egui::pos2(x - 4.0, y - 4.0), egui::vec2(w + 8.0, h + 8.0)),
-        4.0,
-        theme::BG_DISPLAY_FRAME,
-    );
+    // Outer bezel frame — skipped when the chassis is baked, since the bake
+    // contains a real beveled depression at the same coords.
+    if !CHASSIS_BAKED.load(std::sync::atomic::Ordering::Relaxed) {
+        painter.rect_filled(
+            egui::Rect::from_min_size(egui::pos2(x - 4.0, y - 4.0), egui::vec2(w + 8.0, h + 8.0)),
+            4.0,
+            theme::BG_DISPLAY_FRAME,
+        );
+    }
+    // Inner lit area — always painted; covers the hammertone texture inside
+    // the baked depression so scan-lines and glow have a uniform dark backdrop.
     painter.rect_filled(
         egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h)),
         0.0,

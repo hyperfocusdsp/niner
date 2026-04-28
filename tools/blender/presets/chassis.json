@@ -1,0 +1,106 @@
+{
+  "_comment": "Mirrors src/ui/panels.rs constants. Drift is caught by tests/chassis_layout_check.rs.",
+
+  "canvas": {
+    "width": 680,
+    "height": 444
+  },
+
+  "layout": {
+    "rack_ear_w": 16.0,
+    "content_left": 30.0,
+    "header_h": 28.0,
+    "edge_band_h": 12.0,
+    "knob_size": 32.0,
+    "knob_spacing": 52.0
+  },
+
+  "screws": {
+    "radius": 5.0,
+    "positions": [
+      [8.0, 18.0],
+      [672.0, 18.0],
+      [8.0, 426.0],
+      [672.0, 426.0]
+    ]
+  },
+
+  "vents": {
+    "_comment": "Per rack ear: 8 slots, slot_w x slot_h centered horizontally in the ear, starting at y=ear_top+35, spacing 44 px.",
+    "slots_per_ear": 8,
+    "slot_w": 8.0,
+    "slot_h": 22.0,
+    "first_slot_y_offset": 35.0,
+    "slot_spacing": 44.0
+  },
+
+  "bezels": {
+    "_comment": "OUTPUT and COMP display bezels. Coords are the lit-area rect; bezel extends 4 px beyond on all sides per widgets.rs:75.",
+    "output": {
+      "x": 30.0, "y": 42.0, "w": 348.0, "h": 56.0
+    },
+    "comp": {
+      "x": 396.0, "y": 42.0, "w": 254.0, "h": 56.0
+    },
+    "frame_padding": 4.0,
+    "corner_radius": 4.0,
+    "extrusion_depth": 0.8,
+    "wall_bevel_deg": 30.0
+  },
+
+  "grooves": {
+    "_comment": "Horizontal section dividers — y values computed from editor.rs/panels.rs layout flow. groove[0] above master row; subsequent above each knob row.",
+    "depth_px": 0.4,
+    "thickness_px": 1.5,
+    "y_positions": [36.0, 120.0, 204.0, 288.0]
+  },
+
+  "edge_band": {
+    "_comment": "Top + bottom 12-px bands recessed slightly so the seam casts a shadow in the bake.",
+    "height_px": 12.0,
+    "step_px": 0.4
+  },
+
+  "material": {
+    "_comment": "Direction shifted 2026-04-28 after user reference image (refs/reference_hammertone_finish.png) — hammertone / textured-spray finish, NOT smooth powder-coat. Real micro-displacement on the geometry (Voronoi/noise driving normal+displacement) gives the visible stipple grain. Slight warm/bronze tint, moderate metallic, broad soft specular highlights from oblique key light. Iter 3 wires this fully; iter 0/1/2 ignore most fields.",
+    "kind": "hammertone_textured_spray",
+    "base_color_linear": [0.0072, 0.0062, 0.0058],
+    "_base_color_note": "≈ #1B1817 sRGB — subtle warm/bronze tint vs the previous neutral #131313. Stays close to BG_PANEL so canvas-edge fallback still matches.",
+    "metallic": 0.30,
+    "roughness": 0.58,
+    "coat_weight": 0.0,
+    "coat_roughness": 0.0,
+    "_coat_note": "Hammertone finishes don't have a clear topcoat — leave coat at zero so the spec reads as paint, not lacquer.",
+    "displacement": {
+      "type": "voronoi_f1",
+      "scale_px": 110.0,
+      "_scale_note": "Smaller scale = denser stipple. 110 maps to roughly the cell density visible in the reference image.",
+      "amplitude_mm": 0.008,
+      "midlevel": 0.5,
+      "distortion": 0.4
+    },
+    "normal_strength": 1.6,
+    "roughness_modulation": {
+      "type": "voronoi_smooth_f1f2",
+      "scale_px": 110.0,
+      "amount": 0.18,
+      "_amount_note": "Roughness +/- 0.18 along the Voronoi cells gives the dark/bright micro-flake variation in the reference."
+    },
+    "anisotropy": 0.0
+  },
+
+  "lights": {
+    "_comment": "Iteration 0 uses only `key`. Iteration 3 adds fill + rim.",
+    "key":  {"position": [-200, 200, 600], "size": 600, "energy": 800},
+    "fill": {"position": [ 300,-100, 400], "size": 400, "energy": 250},
+    "rim":  {"position": [ 200, 400, 200], "size": 200, "energy": 400}
+  },
+
+  "render": {
+    "engine": "CYCLES",
+    "scale": 2,
+    "samples": 256,
+    "denoise": true,
+    "view_transform": "Standard"
+  }
+}

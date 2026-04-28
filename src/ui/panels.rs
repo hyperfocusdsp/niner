@@ -60,65 +60,65 @@ fn set_display_mode(ctx: &egui::Context, mode: DisplayMode) {
 /// Draw the panel background, rack ears, screws, bevels, and title strip.
 /// Returns the vertical center of the header band, which downstream code
 /// uses to align the preset bar and test button.
-pub fn draw_chrome(ui: &egui::Ui, panel_rect: egui::Rect) -> f32 {
+///
+/// When `chassis` is `Some`, the baked photoreal chassis PNG replaces the
+/// procedural `BG_PANEL` fill. As the bake grows in subsequent iterations,
+/// more procedural chrome (ears, screws, edge bands, grooves) will move
+/// into the texture and the corresponding draw calls below will gate on
+/// `chassis.is_none()`. When `None` (texture failed to decode/load), the
+/// full procedural fallback runs unchanged.
+pub fn draw_chrome(
+    ui: &egui::Ui,
+    panel_rect: egui::Rect,
+    chassis: Option<&egui::TextureHandle>,
+) -> f32 {
     let w = panel_rect.width();
     let h = panel_rect.height();
     let header_center_y = panel_rect.top() + HEADER_H * 0.5;
 
     let painter = ui.painter();
-    painter.rect_filled(panel_rect, 0.0, theme::BG_PANEL);
-    // Top edge band
-    painter.rect_filled(
-        egui::Rect::from_min_size(panel_rect.min, egui::vec2(w, 12.0)),
-        0.0,
-        theme::BG_PANEL_EDGE,
-    );
-    // Bottom edge band
-    painter.rect_filled(
-        egui::Rect::from_min_size(
-            egui::pos2(panel_rect.left(), panel_rect.bottom() - 12.0),
-            egui::vec2(w, 12.0),
-        ),
-        0.0,
-        theme::BG_PANEL_EDGE,
-    );
-
-    // Rack ears
-    draw_rack_ear(painter, panel_rect.left(), panel_rect.top(), RACK_EAR_W, h);
-    draw_rack_ear(
-        painter,
-        panel_rect.right() - RACK_EAR_W,
-        panel_rect.top(),
-        RACK_EAR_W,
-        h,
-    );
-
-    // Screws (corners)
-    let screw_r = 5.0;
-    draw_screw(
-        painter,
-        panel_rect.left() + 8.0,
-        panel_rect.top() + 18.0,
-        screw_r,
-    );
-    draw_screw(
-        painter,
-        panel_rect.left() + 8.0,
-        panel_rect.bottom() - 18.0,
-        screw_r,
-    );
-    draw_screw(
-        painter,
-        panel_rect.right() - 8.0,
-        panel_rect.top() + 18.0,
-        screw_r,
-    );
-    draw_screw(
-        painter,
-        panel_rect.right() - 8.0,
-        panel_rect.bottom() - 18.0,
-        screw_r,
-    );
+    if let Some(t) = chassis {
+        painter.image(
+            t.id(),
+            panel_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    } else {
+        // Procedural fallback: BG fill + edge bands + rack ears + screws.
+        // All baked into the texture in the `Some` branch.
+        painter.rect_filled(panel_rect, 0.0, theme::BG_PANEL);
+        painter.rect_filled(
+            egui::Rect::from_min_size(panel_rect.min, egui::vec2(w, 12.0)),
+            0.0,
+            theme::BG_PANEL_EDGE,
+        );
+        painter.rect_filled(
+            egui::Rect::from_min_size(
+                egui::pos2(panel_rect.left(), panel_rect.bottom() - 12.0),
+                egui::vec2(w, 12.0),
+            ),
+            0.0,
+            theme::BG_PANEL_EDGE,
+        );
+        draw_rack_ear(painter, panel_rect.left(), panel_rect.top(), RACK_EAR_W, h);
+        draw_rack_ear(
+            painter,
+            panel_rect.right() - RACK_EAR_W,
+            panel_rect.top(),
+            RACK_EAR_W,
+            h,
+        );
+        let screw_r = 5.0;
+        for (sx, sy) in [
+            (panel_rect.left() + 8.0, panel_rect.top() + 18.0),
+            (panel_rect.left() + 8.0, panel_rect.bottom() - 18.0),
+            (panel_rect.right() - 8.0, panel_rect.top() + 18.0),
+            (panel_rect.right() - 8.0, panel_rect.bottom() - 18.0),
+        ] {
+            draw_screw(painter, sx, sy, screw_r);
+        }
+    }
 
     // Title logo is painted by the editor (texture handle lives there).
     // Power LED stays here.

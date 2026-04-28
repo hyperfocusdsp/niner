@@ -140,6 +140,11 @@ pub fn create(
     // upload pattern as the header logo, separate handle so each can be
     // sized independently if needed.
     let hf_logo_texture: Arc<Mutex<Option<egui::TextureHandle>>> = Arc::new(Mutex::new(None));
+    // Photoreal baked chassis (Cycles render baked offline at
+    // tools/blender/). Same lazy-upload pattern as the logos; replaces the
+    // procedural BG_PANEL fill in panels::draw_chrome when present, falls
+    // back to procedural on decode failure.
+    let chassis_texture: Arc<Mutex<Option<egui::TextureHandle>>> = Arc::new(Mutex::new(None));
     let dice_locks = Arc::new(std::sync::atomic::AtomicU8::new(0));
 
     create_egui_editor(
@@ -187,8 +192,40 @@ pub fn create(
                 .show(ctx, |ui| {
                     let panel_rect = ui.max_rect();
 
+                    // Chassis texture (lazy upload — replaces the procedural
+                    // BG fill in draw_chrome when present).
+                    {
+                        let mut tex = chassis_texture.lock();
+                        if tex.is_none() {
+                            let bytes = include_bytes!("../../assets/chassis.png");
+                            if let Ok(img) = image::load_from_memory(bytes) {
+                                let rgba = img.to_rgba8();
+                                let (w, h) = rgba.dimensions();
+                                let pixels = rgba.into_raw();
+                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                    [w as usize, h as usize],
+                                    &pixels,
+                                );
+                                *tex = Some(ctx.load_texture(
+                                    "niner_chassis",
+                                    color_image,
+                                    egui::TextureOptions::LINEAR,
+                                ));
+                                // Tell draw_groove and any other gated
+                                // chrome painters to skip — the bake
+                                // includes real beveled grooves.
+                                crate::ui::widgets::CHASSIS_BAKED
+                                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
+                    }
+
                     // ===== Panel chrome =====
-                    let header_center_y = panels::draw_chrome(ui, panel_rect);
+                    let header_center_y = panels::draw_chrome(
+                        ui,
+                        panel_rect,
+                        chassis_texture.lock().as_ref(),
+                    );
 
                     // Header logo (lazy texture upload, then painter::image).
                     {
