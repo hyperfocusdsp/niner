@@ -30,7 +30,11 @@ mod dsp {
     pub mod voice_clip;
 }
 
-mod ui;
+// Public so integration tests (e.g. tests/chassis_layout_check.rs) can
+// assert against the layout constants in `ui::panels`. The cdylib bundles
+// don't expose Rust modules to the DAW host, so this has no external
+// surface impact.
+pub mod ui;
 
 mod util;
 

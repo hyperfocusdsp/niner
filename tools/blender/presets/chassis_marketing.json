@@ -1,0 +1,67 @@
+{
+  "_comment": "Hero / marketing render — same scene as chassis.json but at 5× canvas size and 1024 samples for hyperfocusdsp.com hero shots and IG content. Output goes to tools/blender/output/chassis_marketing/ ONLY — does NOT overwrite assets/chassis.png.",
+
+  "canvas": { "width": 680, "height": 444 },
+
+  "layout": {
+    "rack_ear_w": 16.0,
+    "content_left": 30.0,
+    "header_h": 28.0,
+    "edge_band_h": 12.0,
+    "knob_size": 32.0,
+    "knob_spacing": 52.0
+  },
+
+  "screws": {
+    "radius": 5.0,
+    "positions": [
+      [8.0, 18.0], [672.0, 18.0],
+      [8.0, 426.0], [672.0, 426.0]
+    ]
+  },
+
+  "vents": {
+    "slots_per_ear": 8,
+    "slot_w": 8.0,
+    "slot_h": 22.0,
+    "first_slot_y_offset": 35.0,
+    "slot_spacing": 44.0
+  },
+
+  "bezels": {
+    "output": { "x": 30.0, "y": 42.0, "w": 348.0, "h": 56.0 },
+    "comp":   { "x": 396.0, "y": 42.0, "w": 254.0, "h": 56.0 },
+    "frame_padding": 4.0,
+    "corner_radius": 4.0,
+    "extrusion_depth": 0.8,
+    "wall_bevel_deg": 30.0
+  },
+
+  "grooves": {
+    "depth_px": 0.4,
+    "thickness_px": 1.5,
+    "y_positions": [36.0, 120.0, 204.0, 288.0]
+  },
+
+  "edge_band": { "height_px": 12.0, "step_px": 0.4 },
+
+  "material": {
+    "kind": "hammertone_textured_spray",
+    "base_color_linear": [0.12, 0.10, 0.08],
+    "metallic": 0.55
+  },
+
+  "lights": {
+    "key":  {"position": [-520, 460, 780], "size": 600, "energy": 850000},
+    "fill": {"position": [ 480,-420, 500], "size": 800, "energy": 160000},
+    "rim":  {"position": [ 420, 300,-350], "size":  80, "energy": 220000}
+  },
+
+  "render": {
+    "engine": "CYCLES",
+    "scale": 5,
+    "samples": 1024,
+    "denoise": true,
+    "view_transform": "Standard"
+  }
+}

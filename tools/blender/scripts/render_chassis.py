@@ -619,6 +619,40 @@ print(f"\n[render_chassis] Rendered: {out_path}")
 print(f"[render_chassis]   resolution: {scene.render.resolution_x}x{scene.render.resolution_y}")
 print(f"[render_chassis]   engine: {scene.render.engine}, samples: {samples}")
 
-target = assets_dir / "chassis.png"
-shutil.copy2(out_path, target)
-print(f"[render_chassis] Copied to: {target}")
+# Production preset (`chassis.json`) overwrites the bundled asset. Any
+# other preset (e.g. `chassis_marketing.json`) leaves assets/ alone and
+# stays in tools/blender/output/<preset>/ for hero shots / IG content.
+if preset_name == "chassis":
+    target = assets_dir / "chassis.png"
+    shutil.copy2(out_path, target)
+
+    # Re-encode with max PNG compression — Cycles' default writer leaves
+    # ~24% on the table. Pixel-identical; reduces binary bloat. Skips if
+    # ImageMagick `convert` isn't available.
+    import subprocess
+    if shutil.which("convert"):
+        tmp = target.with_suffix(".tmp.png")
+        subprocess.run(
+            [
+                "convert", str(target),
+                "-strip",
+                "-define", "png:compression-level=9",
+                "-define", "png:compression-strategy=2",
+                "-define", "png:exclude-chunks=all",
+                str(tmp),
+            ],
+            check=True,
+        )
+        orig_size = target.stat().st_size
+        new_size = tmp.stat().st_size
+        if new_size < orig_size:
+            tmp.replace(target)
+            print(f"[render_chassis] Recompressed: {orig_size} → {new_size} bytes "
+                  f"({(orig_size - new_size) * 100 // orig_size}% saved)")
+        else:
+            tmp.unlink()
+
+    print(f"[render_chassis] Copied to: {target}")
+else:
+    print(f"[render_chassis] Non-production preset '{preset_name}' — "
+          f"output stays in {out_path} (assets/chassis.png not touched)")

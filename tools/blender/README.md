@@ -44,12 +44,27 @@ light, edges dimmer from light falloff. Iter 3 material targets this look.
 ## Render
 
 ```bash
-./render_chassis.sh                                  # default 1360×888 production
-./render_chassis.sh presets/chassis_marketing.json   # 3200×2090 hero
+./render_chassis.sh                                  # production: 1360×888, 256 samples → assets/chassis.png
+./render_chassis.sh presets/chassis_marketing.json   # hero: 3400×2220, 1024 samples → output/chassis_marketing/
 ```
 
-The script copies the result to `~/repos/niner/assets/chassis.png` so
-`cargo build --release` picks it up via `include_bytes!()`.
+The production preset auto-copies the result to `~/repos/niner/assets/chassis.png`
+and re-encodes it with max PNG compression (saves ~24% over Cycles' default
+writer; pixel-identical). `cargo build --release` then picks it up via
+`include_bytes!()`.
+
+The marketing preset stays in `output/chassis_marketing/` — does **not**
+overwrite the runtime asset. Use it for hyperfocusdsp.com hero shots and
+IG content. Render time on CPU is 1–2 hours at this resolution + sample
+count; on a CUDA GPU it drops to 5–15 min.
+
+## Drift detection
+
+`cargo test --test chassis_layout_check` asserts that `presets/chassis.json`
+matches the canonical Rust constants in `src/ui/panels.rs`. Any drift
+between the JSON and Rust will fail the test. **Edit both sides whenever
+the canvas size, screw positions, rack ear width, bezel rects, vent
+slots, groove y-positions, or edge-band height changes.**
 
 ## Fast iteration
 
