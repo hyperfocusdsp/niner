@@ -82,36 +82,98 @@ pub fn draw_led(painter: &egui::Painter, cx: f32, cy: f32, on: bool) {
 }
 
 /// Inset LCD-style display frame with scan-lines and a red ambient glow.
+/// Asymmetric padding from the bezel rect to the lit content rect.
+///
+/// The lit area sits inside the bezel with more dark margin on left/top/
+/// bottom than right — the dark frame "extends further" around the lit
+/// content. The right margin matches the bezel `frame` thickness so the
+/// existing 7-seg readout placement (right-aligned to `wf_width`) stays
+/// flush with the right bezel edge as it always has.
+#[derive(Copy, Clone, Debug)]
+pub struct DisplayInsets {
+    pub frame: f32,
+    pub content_left: f32,
+    pub content_top: f32,
+    pub content_bottom: f32,
+    pub content_right: f32,
+}
+
+impl DisplayInsets {
+    pub const DEFAULT: Self = Self {
+        frame: 4.0,
+        content_left: 8.0,
+        content_top: 6.0,
+        content_bottom: 6.0,
+        content_right: 4.0,
+    };
+
+    /// Compute the lit rect from a bezel-inside rect (`x, y, w, h` — the
+    /// area the original `draw_inset_display` painted as `BG_DISPLAY`).
+    pub fn lit_rect(&self, x: f32, y: f32, w: f32, h: f32) -> egui::Rect {
+        egui::Rect::from_min_size(
+            egui::pos2(x + self.content_left, y + self.content_top),
+            egui::vec2(
+                w - self.content_left - self.content_right,
+                h - self.content_top - self.content_bottom,
+            ),
+        )
+    }
+}
+
+/// Draw the dark inset display backdrop with default insets. The lit rect
+/// (where scan-lines + red glow are painted) is asymmetrically inset from
+/// the bezel — see `DisplayInsets::DEFAULT`. Use [`lit_rect_default`] when
+/// placing content inside it.
 pub fn draw_inset_display(painter: &egui::Painter, x: f32, y: f32, w: f32, h: f32) {
+    draw_inset_display_with(painter, x, y, w, h, DisplayInsets::DEFAULT);
+}
+
+/// Lit rect for the default insets — convenience for content placement.
+pub fn lit_rect_default(x: f32, y: f32, w: f32, h: f32) -> egui::Rect {
+    DisplayInsets::DEFAULT.lit_rect(x, y, w, h)
+}
+
+/// Draw the dark inset display backdrop with explicit insets.
+pub fn draw_inset_display_with(
+    painter: &egui::Painter,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    insets: DisplayInsets,
+) {
     // Outer bezel frame — skipped when the chassis is baked, since the bake
     // contains a real beveled depression at the same coords.
     if !CHASSIS_BAKED.load(std::sync::atomic::Ordering::Relaxed) {
         painter.rect_filled(
-            egui::Rect::from_min_size(egui::pos2(x - 4.0, y - 4.0), egui::vec2(w + 8.0, h + 8.0)),
+            egui::Rect::from_min_size(
+                egui::pos2(x - insets.frame, y - insets.frame),
+                egui::vec2(w + insets.frame * 2.0, h + insets.frame * 2.0),
+            ),
             4.0,
             theme::BG_DISPLAY_FRAME,
         );
     }
-    // Inner lit area — always painted; covers the hammertone texture inside
-    // the baked depression so scan-lines and glow have a uniform dark backdrop.
-    painter.rect_filled(
-        egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h)),
-        0.0,
-        theme::BG_DISPLAY,
-    );
-    let mut sy = y;
-    while sy < y + h {
+    let lit = insets.lit_rect(x, y, w, h);
+    // Inner lit area — uniform dark backdrop. Covers the hammertone
+    // texture inside the baked depression so scan-lines and glow have a
+    // clean surface to render against.
+    painter.rect_filled(lit, 0.0, theme::BG_DISPLAY);
+    // Scan-lines, confined to lit rect.
+    let mut sy = lit.top();
+    while sy < lit.bottom() {
         painter.line_segment(
-            [egui::pos2(x, sy), egui::pos2(x + w, sy)],
+            [egui::pos2(lit.left(), sy), egui::pos2(lit.right(), sy)],
             egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(0, 0, 0, 20)),
         );
         sy += 2.0;
     }
-    let glow_inset = w * 0.2;
+    // Red ambient glow, confined to lit rect.
+    let glow_inset = lit.width() * 0.2;
     painter.rect_filled(
         egui::Rect::from_min_size(
-            egui::pos2(x + glow_inset, y + h * 0.2),
-            egui::vec2(w - glow_inset * 2.0, h * 0.6),
+            egui::pos2(lit.left() + glow_inset, lit.top() + lit.height() * 0.2),
+            egui::vec2(lit.width() - glow_inset * 2.0, lit.height() * 0.6),
         ),
         0.0,
         theme::RED_AMBIENT,

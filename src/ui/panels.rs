@@ -252,12 +252,22 @@ impl<'a> MasterRow<'a> {
             self.wf_width,
             self.wf_height,
         );
+        // Content rect — asymmetrically inset from the bezel so the dark
+        // frame extends further on left/top/bottom (right margin matches
+        // bezel padding so 7-seg / GR-bar tail stays flush with the right
+        // edge as before).
+        let lit = crate::ui::widgets::lit_rect_default(
+            self.wf_left,
+            self.master_y,
+            self.wf_width,
+            self.wf_height,
+        );
         let mode_label = match self.display_mode {
             DisplayMode::Waveform => "OUTPUT",
             DisplayMode::Spectrum => "SPECTRUM",
         };
         painter.text(
-            egui::pos2(self.wf_left + 4.0, self.master_y + 3.0),
+            egui::pos2(lit.left() + 2.0, lit.top() + 1.0),
             egui::Align2::LEFT_TOP,
             mode_label,
             egui::FontId::new(6.0, egui::FontFamily::Monospace),
@@ -267,12 +277,12 @@ impl<'a> MasterRow<'a> {
             DisplayMode::Waveform => {
                 if !self.waveform_peaks.is_empty() {
                     let n = self.waveform_peaks.len();
-                    let mid_y = self.master_y + self.wf_height / 2.0;
+                    let mid_y = lit.top() + lit.height() / 2.0;
                     for (i, &peak) in self.waveform_peaks.iter().enumerate() {
-                        let x = self.wf_left
+                        let x = lit.left()
                             + 2.0
-                            + (i as f32 / n as f32) * (self.wf_width - 4.0);
-                        let amp = peak.min(1.0) * self.wf_height * 0.475;
+                            + (i as f32 / n as f32) * (lit.width() - 4.0);
+                        let amp = peak.min(1.0) * lit.height() * 0.475;
                         painter.line_segment(
                             [
                                 egui::pos2(x, mid_y - amp),
@@ -286,11 +296,11 @@ impl<'a> MasterRow<'a> {
             DisplayMode::Spectrum => {
                 // Leave ~10 px at the top clear for the GR overlay + label;
                 // bars grow up from `bars_bottom` toward `bars_top`.
-                let bars_bottom = self.master_y + self.wf_height - 2.0;
-                let bars_top = self.master_y + 10.0;
+                let bars_bottom = lit.bottom() - 2.0;
+                let bars_top = lit.top() + 10.0;
                 let plot_h = (bars_bottom - bars_top).max(1.0);
                 let db_span = DB_CEIL - DB_FLOOR; // 60 dB
-                let usable_w = (self.wf_width - 4.0).max(1.0);
+                let usable_w = (lit.width() - 4.0).max(1.0);
                 let bar_slot = usable_w / SPECTRUM_BINS as f32;
                 // 1 px gap between bars if the slot is wide enough; otherwise
                 // draw a flush 1 px bar so low-width displays still render.
@@ -298,7 +308,7 @@ impl<'a> MasterRow<'a> {
                 for i in 0..SPECTRUM_BINS {
                     let db = self.spectrum_bins[i].clamp(DB_FLOOR, DB_CEIL);
                     let norm = ((db - DB_FLOOR) / db_span).clamp(0.0, 1.0);
-                    let x = self.wf_left + 2.0 + i as f32 * bar_slot;
+                    let x = lit.left() + 2.0 + i as f32 * bar_slot;
                     let h = norm * plot_h;
                     if h > 0.5 {
                         painter.rect_filled(
@@ -332,15 +342,15 @@ impl<'a> MasterRow<'a> {
         }
 
         // ── Gain-reduction overlay bar ──
-        // Painted along the top of the OUTPUT display, just under the
-        // "OUTPUT" label. Fills right-to-left, 0..18 dB of reduction maps
-        // to 0..full width.
+        // Painted along the top of the lit rect, just under the mode
+        // label. Fills right-to-left, 0..18 dB of reduction maps to 0..full
+        // width.
         {
             let gr_max_db = 18.0f32;
             let gr_norm = (self.gr_db / gr_max_db).clamp(0.0, 1.0);
-            let bar_x = self.wf_left + 36.0; // clear the "OUTPUT" label
-            let bar_y = self.master_y + 4.0;
-            let bar_w_total = self.wf_width - 40.0 - 4.0;
+            let bar_x = lit.left() + 32.0; // clear the mode label
+            let bar_y = lit.top() + 2.0;
+            let bar_w_total = lit.right() - bar_x - 2.0;
             let bar_h = 3.0;
             // Housing (dim red, full width).
             painter.rect_filled(
@@ -390,16 +400,15 @@ impl<'a> MasterRow<'a> {
                 theme::TEXT_DIM,
             );
         }
-        // Knob value readout — rendered via a temp data slot set by knob.rs
+        // Knob value readout — rendered via a temp data slot set by knob.rs.
+        // Anchored to the lit rect's bottom-right so it sits inside the
+        // dark inner area, not on the bezel frame.
         let knob_text: Option<String> =
             ui.ctx().data(|d| d.get_temp(egui::Id::new("knob_display")));
         if let Some(text) = knob_text {
             let readout_rect = egui::Rect::from_min_size(
-                egui::pos2(
-                    self.wf_left + self.wf_width - 160.0,
-                    self.master_y + self.wf_height - 18.0,
-                ),
-                egui::vec2(156.0, 16.0),
+                egui::pos2(lit.right() - 160.0, lit.bottom() - 16.0),
+                egui::vec2(156.0, 14.0),
             );
             crate::ui::seven_seg::draw_7seg_text(ui.painter(), readout_rect, &text);
         }
@@ -484,8 +493,14 @@ impl<'a> MasterRow<'a> {
                     strip_w - 4.0,
                     self.wf_height,
                 );
+                let comp_lit = crate::ui::widgets::lit_rect_default(
+                    strip_x + 2.0,
+                    self.master_y,
+                    strip_w - 4.0,
+                    self.wf_height,
+                );
                 ui.painter().text(
-                    egui::pos2(strip_x + 6.0, self.master_y + 3.0),
+                    egui::pos2(comp_lit.left() + 2.0, comp_lit.top() + 1.0),
                     egui::Align2::LEFT_TOP,
                     "COMP",
                     egui::FontId::new(6.0, egui::FontFamily::Monospace),
@@ -493,9 +508,9 @@ impl<'a> MasterRow<'a> {
                 );
 
                 // LIM toggle — small LED + label, painted in the top-right
-                // corner of the strip. Clickable via ui.interact().
-                let lim_cx = strip_x + strip_w - 12.0;
-                let lim_cy = self.master_y + 8.0;
+                // corner of the lit rect. Clickable via ui.interact().
+                let lim_cx = comp_lit.right() - 8.0;
+                let lim_cy = comp_lit.top() + 4.0;
                 let lim_on = params.comp_limit_on.value();
                 draw_led(ui.painter(), lim_cx, lim_cy, lim_on);
                 ui.painter().text(
