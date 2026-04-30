@@ -86,13 +86,6 @@ pub struct Niner {
     /// Previous buffer's `sequencer.running` value — used to detect the
     /// play-toggle rising edge and reset to step 1.
     seq_running_prev: bool,
-    /// Glitch-bisect knob, set once in `initialize()` from the
-    /// `NINER_DISABLE_SPECTRUM` env var. When true, the audio thread
-    /// skips the spectrum analyzer's `feed_sample` call (which runs an
-    /// FFT every 1024 samples). Lets us A/B test whether the FFT is the
-    /// source of the v0.6.0 RT-only crunchiness — Autokit on the same
-    /// box has no audio-thread FFT and is glitch-free.
-    spectrum_disabled: bool,
 }
 
 impl Default for Niner {
@@ -125,10 +118,6 @@ impl Default for Niner {
             host_ever_stopped: false,
             last_host_step: None,
             seq_running_prev: false,
-            // Real value populated in `initialize()` from the env var so
-            // the standalone honors it. VST3/CLAP hosts honor it too if the
-            // user set the variable in the DAW launch environment.
-            spectrum_disabled: false,
         }
     }
 }
@@ -202,18 +191,6 @@ impl Plugin for Niner {
         // point; copy the bitmask into the sequencer atomics so the first
         // `process()` call sees the restored pattern.
         self.sequencer.restore_from_persist();
-
-        // Bisect knob for the v0.6.0 glitch hunt. Anything set to a
-        // non-empty, non-"0" value disables the audio-thread FFT.
-        self.spectrum_disabled = std::env::var("NINER_DISABLE_SPECTRUM")
-            .map(|v| !v.is_empty() && v != "0")
-            .unwrap_or(false);
-        if self.spectrum_disabled {
-            tracing::warn!(
-                "NINER_DISABLE_SPECTRUM is set — audio-thread spectrum FFT is OFF. \
-                 Spectrum display will not update."
-            );
-        }
         true
     }
 
@@ -458,7 +435,7 @@ impl Plugin for Niner {
                 // stores — no mutex, no heap, nothing that can trip
                 // `assert_process_allocs`.
                 let mono = 0.5 * (ol + or_);
-                if !self.spectrum_disabled && self.spectrum.feed_sample(mono) {
+                if self.spectrum.feed_sample(mono) {
                     self.spectrum_shared.store_bins(self.spectrum.bins_db());
                 }
             }
