@@ -221,7 +221,11 @@ pub struct MasterRow<'a> {
     pub wf_left: f32,
     pub wf_width: f32,
     pub wf_height: f32,
-    pub waveform_peaks: &'a [f32],
+    /// Two-slice view over the editor's waveform ring buffer. Concatenate
+    /// `older` then `newer` for oldest-first iteration. Either slice can
+    /// be empty; their combined length is the number of valid points.
+    pub waveform_peaks_older: &'a [f32],
+    pub waveform_peaks_newer: &'a [f32],
     /// Latest dB-per-band snapshot from the audio thread. Indices 0..BINS,
     /// values in `[DB_FLOOR, DB_CEIL]` (i.e. -60..0).
     pub spectrum_bins: &'a [f32; SPECTRUM_BINS],
@@ -320,10 +324,16 @@ impl<'a> MasterRow<'a> {
         );
         match self.display_mode {
             DisplayMode::Waveform => {
-                if !self.waveform_peaks.is_empty() {
-                    let n = self.waveform_peaks.len();
+                let total = self.waveform_peaks_older.len() + self.waveform_peaks_newer.len();
+                if total > 0 {
+                    let n = total;
                     let mid_y = lit.top() + lit.height() / 2.0;
-                    for (i, &peak) in self.waveform_peaks.iter().enumerate() {
+                    for (i, &peak) in self
+                        .waveform_peaks_older
+                        .iter()
+                        .chain(self.waveform_peaks_newer.iter())
+                        .enumerate()
+                    {
                         let x = lit.left() + 2.0 + (i as f32 / n as f32) * (lit.width() - 4.0);
                         let amp = peak.min(1.0) * lit.height() * 0.475;
                         painter.line_segment(

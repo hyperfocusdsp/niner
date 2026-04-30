@@ -33,24 +33,98 @@ static KEY_EVENT_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
 const KEY_EVENT_LOG_MAX: usize = 32;
 
 /// Rolling ring of recent audio peaks for the OUTPUT waveform display.
+///
+/// Fixed-capacity ring buffer with an explicit head cursor. `push` is O(1)
+/// — replaces the original `Vec::remove(0)` which was O(n) on every drain
+/// once the buffer was full (a full 200-element memmove per audio
+/// telemetry frame). Memory layout: `buf` is allocated once at editor
+/// construction and never resized; `head` is the next write slot, `full`
+/// flips true on the first wrap.
 struct WaveformDisplay {
-    peaks: Vec<f32>,
-    max_points: usize,
+    buf: Box<[f32]>,
+    head: usize,
+    full: bool,
 }
 
 impl WaveformDisplay {
     fn new(max_points: usize) -> Self {
         Self {
-            peaks: Vec::with_capacity(max_points),
-            max_points,
+            buf: vec![0.0f32; max_points].into_boxed_slice(),
+            head: 0,
+            full: false,
         }
     }
 
     fn push(&mut self, peak: f32) {
-        if self.peaks.len() >= self.max_points {
-            self.peaks.remove(0);
+        // Empty buffer (max_points = 0) is a degenerate config — guard so
+        // `self.buf[0]` is never indexed past the slice.
+        if self.buf.is_empty() {
+            return;
         }
-        self.peaks.push(peak);
+        self.buf[self.head] = peak;
+        self.head += 1;
+        if self.head >= self.buf.len() {
+            self.head = 0;
+            self.full = true;
+        }
+    }
+
+    /// Two ordered slices — concatenate for an oldest-first walk. While
+    /// the ring is still filling, `older` is empty and `newer` is the
+    /// live prefix.
+    fn slices(&self) -> (&[f32], &[f32]) {
+        if self.full {
+            let (newer, older) = self.buf.split_at(self.head);
+            (older, newer)
+        } else {
+            (&[], &self.buf[..self.head])
+        }
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        if self.full { self.buf.len() } else { self.head }
+    }
+}
+
+#[cfg(test)]
+mod waveform_tests {
+    use super::WaveformDisplay;
+
+    #[test]
+    fn ring_wraparound_yields_oldest_first() {
+        // Capacity 5; push 7 values so the ring wraps. The oldest two are
+        // overwritten — the iter must yield 3, 4, 5, 6, 7 in order.
+        let mut wf = WaveformDisplay::new(5);
+        for v in 1..=7 {
+            wf.push(v as f32);
+        }
+        let (older, newer) = wf.slices();
+        let collected: Vec<f32> = older.iter().chain(newer.iter()).copied().collect();
+        assert_eq!(collected, vec![3.0, 4.0, 5.0, 6.0, 7.0]);
+        assert_eq!(wf.len(), 5);
+    }
+
+    #[test]
+    fn before_wrap_older_is_empty() {
+        let mut wf = WaveformDisplay::new(10);
+        wf.push(1.0);
+        wf.push(2.0);
+        wf.push(3.0);
+        let (older, newer) = wf.slices();
+        assert!(older.is_empty());
+        assert_eq!(newer, &[1.0, 2.0, 3.0][..]);
+        assert_eq!(wf.len(), 3);
+    }
+
+    #[test]
+    fn empty_capacity_does_not_panic() {
+        // Edge case: 0-cap is degenerate but must not panic.
+        let mut wf = WaveformDisplay::new(0);
+        wf.push(1.0);
+        assert_eq!(wf.len(), 0);
+        let (a, b) = wf.slices();
+        assert!(a.is_empty() && b.is_empty());
     }
 }
 
@@ -618,12 +692,14 @@ pub fn create(
                         let sd = spectrum_display.lock();
                         let mode = panels::display_mode(ctx);
                         let display_reflection_lock = display_reflection_texture.lock();
+                        let (wf_older, wf_newer) = wf.slices();
                         let master_row = panels::MasterRow {
                             master_y,
                             wf_left,
                             wf_width,
                             wf_height,
-                            waveform_peaks: &wf.peaks,
+                            waveform_peaks_older: wf_older,
+                            waveform_peaks_newer: wf_newer,
                             spectrum_bins: &sd.bins,
                             spectrum_peak_hold: &sd.peak_hold,
                             display_mode: mode,
