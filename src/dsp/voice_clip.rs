@@ -130,7 +130,10 @@ mod tests {
         for &drive in &[0.2, 0.5, 1.0] {
             for &x in &[-10.0, -2.0, 2.0, 10.0] {
                 let y = tanh_clip(x, drive);
-                assert!(y.abs() < 1.001, "tanh out of bounds: drive={drive} x={x} y={y}");
+                assert!(
+                    y.abs() < 1.001,
+                    "tanh out of bounds: drive={drive} x={x} y={y}"
+                );
             }
         }
     }

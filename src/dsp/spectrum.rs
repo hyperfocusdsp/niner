@@ -59,8 +59,7 @@ impl SpectrumAnalyzer {
         let n_minus_one = (FFT_SIZE - 1) as f32;
         let mut win_sum = 0.0f32;
         for (i, w) in window.iter_mut().enumerate() {
-            let v =
-                0.5 - 0.5 * (std::f32::consts::TAU * (i as f32) / n_minus_one).cos();
+            let v = 0.5 - 0.5 * (std::f32::consts::TAU * (i as f32) / n_minus_one).cos();
             *w = v;
             win_sum += v;
         }
@@ -230,22 +229,14 @@ mod tests {
         }
         assert!(produced, "FFT never ran — ring didn't wrap");
         // Expect at least one bin within ~3 dB of 0 dB (full-scale).
-        let peak = sp
-            .bins_db()
-            .iter()
-            .copied()
-            .fold(DB_FLOOR, f32::max);
+        let peak = sp.bins_db().iter().copied().fold(DB_FLOOR, f32::max);
         assert!(
             peak >= -3.0,
             "expected a bin near 0 dB for a full-scale sine, got peak = {peak} dB"
         );
         // Sanity: something *below* -30 dB should also exist (not every band
         // is lit up — silence elsewhere).
-        let min = sp
-            .bins_db()
-            .iter()
-            .copied()
-            .fold(DB_CEIL, f32::min);
+        let min = sp.bins_db().iter().copied().fold(DB_CEIL, f32::min);
         assert!(
             min <= -30.0,
             "expected quiet bands below -30 dB, got min = {min} dB"

@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slammer v0.6.0 — new-knob layout pick</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --panel: #161616;
+    --panel-edge: #2a2a2a;
+    --label: #aaa;
+    --label-dim: #666;
+    --red: #ff2222;
+    --red-dim: rgba(255,34,34,0.55);
+    --red-bg: rgba(255,34,34,0.12);
+    --new-glow: 0 0 0 1px var(--red), 0 0 12px rgba(255,34,34,0.5);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    background: var(--bg);
+    color: var(--label);
+    font: 12px/1.4 ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  }
+  h1 { color: #ddd; font-weight: 600; font-size: 13px; margin: 0 0 4px 0; letter-spacing: 0.05em; }
+  .lede { color: var(--label-dim); margin: 0 0 18px 0; max-width: 720px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tab {
+    background: var(--panel); border: 1px solid var(--panel-edge);
+    color: var(--label); padding: 8px 14px; cursor: pointer;
+    font: inherit; letter-spacing: 0.05em;
+  }
+  .tab.active { background: var(--red-bg); border-color: var(--red); color: #fff; }
+  .tab:hover { background: #1c1c1c; }
+  .variant { display: none; }
+  .variant.active { display: block; }
+  .plugin {
+    background: var(--panel); border: 1px solid var(--panel-edge);
+    border-radius: 4px; padding: 14px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+    width: 880px;
+  }
+  .row {
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px dashed #1f1f1f;
+    padding: 10px 0;
+  }
+  .row:last-child { border-bottom: none; }
+  .row-label {
+    width: 60px; color: var(--label-dim); font-size: 9px;
+    letter-spacing: 0.15em;
+  }
+  .knob {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 4px; min-width: 48px;
+  }
+  .knob-circle {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #2a2a2a 0%, #111 70%, #000 100%);
+    border: 1px solid #2a2a2a;
+    position: relative;
+  }
+  .knob-circle::after {
+    content: ''; position: absolute; left: 50%; top: 6px;
+    width: 1px; height: 8px; background: var(--label);
+    transform: translateX(-50%) rotate(35deg); transform-origin: 50% 10px;
+  }
+  .knob-label {
+    font-size: 8.5px; letter-spacing: 0.08em; color: var(--label);
+    white-space: nowrap;
+  }
+  .selector {
+    width: 56px; height: 22px; border-radius: 2px;
+    background: #0a0a0a; border: 1px solid #2a2a2a;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--label); font-size: 9px;
+  }
+  .knob.new .knob-circle { box-shadow: var(--new-glow); border-color: var(--red); }
+  .knob.new .knob-label { color: #fff; }
+  .knob.new .knob-circle::after { background: var(--red); }
+  .knob.new .selector { box-shadow: var(--new-glow); border-color: var(--red); color: #fff; }
+  .knob.new .selector-compact { box-shadow: var(--new-glow); border-color: var(--red); color: #ff5252; }
+
+  /* Compact small-cluster style — matches comp/precise/clap section */
+  .knob.small { min-width: 28px; }
+  .knob.small .knob-circle {
+    width: 22px; height: 22px;
+  }
+  .knob.small .knob-circle::after {
+    height: 6px; top: 4px; transform-origin: 50% 7px;
+  }
+  .knob.small .knob-label { font-size: 7px; letter-spacing: 0.04em; }
+
+  /* Compact LCD-style selector — half-height of full selector */
+  .selector-compact {
+    width: 60px; height: 16px; border-radius: 1px;
+    background: #060606; border: 1px solid #2a2a2a;
+    display: flex; align-items: center; justify-content: center;
+    color: #ff2222; font-family: ui-monospace, monospace;
+    font-size: 8px; letter-spacing: 0.05em;
+    text-shadow: 0 0 4px rgba(255,34,34,0.6);
+    position: relative;
+  }
+  .selector-compact::before, .selector-compact::after {
+    content: ''; position: absolute; top: 50%; transform: translateY(-50%);
+    width: 0; height: 0; border-style: solid;
+  }
+  .selector-compact::before {
+    left: -10px; border-width: 4px 5px 4px 0; border-color: transparent #444 transparent transparent;
+  }
+  .selector-compact::after {
+    right: -10px; border-width: 4px 0 4px 5px; border-color: transparent transparent transparent #444;
+  }
+  .selector-compact-wrap {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 2px; padding: 0 12px; min-width: 84px;
+  }
+  .selector-compact-wrap .knob-label { font-size: 7px; letter-spacing: 0.04em; }
+
+  /* The 2x4 stacked SAT cluster used by variant D */
+  .sat-stack {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .sat-substack {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .sat-substack .empty {
+    width: 28px; height: 22px;
+  }
+  .vline {
+    width: 1px; align-self: stretch; background: #2a2a2a; margin: 4px 12px;
+  }
+  .step-row {
+    display: flex; gap: 3px; padding-left: 60px; margin-top: 6px;
+  }
+  .step {
+    width: 38px; height: 24px; border-radius: 3px;
+    background: #1a1a1a; border: 1px solid #2a2a2a;
+    position: relative;
+  }
+  .step.on { background: var(--red); }
+  .step.beat { background: #261a1a; }
+  .step.beat.on { background: var(--red); }
+  .step.acc::after {
+    content: ''; position: absolute; bottom: 2px; left: 6px; right: 6px;
+    height: 3px; background: #fff; border-radius: 1px;
+  }
+  .legend {
+    margin-top: 16px; padding: 10px 12px;
+    background: #0a0a0a; border: 1px solid var(--panel-edge);
+    border-radius: 3px; color: var(--label-dim); font-size: 11px;
+  }
+  .legend strong { color: #fff; font-weight: 600; }
+  .legend .new-tag {
+    display: inline-block; padding: 1px 6px; margin-right: 6px;
+    background: var(--red-bg); border: 1px solid var(--red);
+    color: #fff; border-radius: 2px; font-size: 9px;
+    letter-spacing: 0.1em;
+  }
+  .pros-cons { display: flex; gap: 28px; margin-top: 10px; }
+  .pros-cons div { flex: 1; }
+  .pros-cons h3 {
+    font-size: 10px; letter-spacing: 0.12em; margin: 0 0 4px 0;
+    color: #888; font-weight: 600;
+  }
+  .pros-cons p { margin: 0; color: var(--label); line-height: 1.5; }
+  .filler { width: 8px; }
+</style>
+</head>
+<body>
+
+<h1>SLAMMER v0.6.0 — NEW KNOB LAYOUT</h1>
+<p class="lede">Originally three layout options. <strong>Variant D is the chosen direction</strong> (your idea — stacked compact LCD selectors + small comp-cluster knobs in the SAT/EQ row left half). Variants A/B/C kept for comparison. Red-glow widgets are the new v0.6.0 controls; everything else is approximate placement of existing controls.</p>
+
+<div class="tabs">
+  <button class="tab active" data-target="D">D · stacked LCDs (chosen)</button>
+  <button class="tab" data-target="A">A · all in SAT/EQ row</button>
+  <button class="tab" data-target="B">B · new CHARACTER row</button>
+  <button class="tab" data-target="C">C · distributed (semantic)</button>
+</div>
+
+<!-- VARIANT D — chosen layout -->
+<div class="variant active" id="D">
+  <div class="plugin">
+    <div class="row">
+      <div class="row-label">MASTER</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">COMP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">REACT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DRIVE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DRIFT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">VOL</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">SUB · TOP</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FSTART</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FEND</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SWEEP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DECAY</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SUB GAIN</div></div>
+      <div class="filler"></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP FREQ</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP BW</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP DEC</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP GAIN</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">METAL</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">MID</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FSTART</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FEND</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SWEEP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DECAY</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TONE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOISE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">N COLOR</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">MID GAIN</div></div>
+    </div>
+    <div class="row" style="padding: 14px 0; min-height: 84px;">
+      <div class="row-label">SAT · EQ</div>
+      <div class="sat-stack">
+        <!-- TOP sub-row: SAT MODE compact + SAT DRV + SAT MIX + empty -->
+        <div class="sat-substack">
+          <div class="selector-compact-wrap">
+            <div class="selector-compact">dIOdE</div>
+            <div class="knob-label">SAT MODE</div>
+          </div>
+          <div class="knob small"><div class="knob-circle"></div><div class="knob-label">SAT DRV</div></div>
+          <div class="knob small"><div class="knob-circle"></div><div class="knob-label">SAT MIX</div></div>
+          <div class="empty"></div>
+        </div>
+        <!-- BOTTOM sub-row: CLIP MODE compact + 3 small new knobs -->
+        <div class="sat-substack">
+          <div class="selector-compact-wrap">
+            <div class="selector-compact" style="box-shadow: var(--new-glow); border-color: var(--red);">tAnH</div>
+            <div class="knob-label" style="color:#fff">CLIP MODE</div>
+          </div>
+          <div class="knob small new"><div class="knob-circle"></div><div class="knob-label">CLIP DRV</div></div>
+          <div class="knob small new"><div class="knob-circle"></div><div class="knob-label">N DECAY</div></div>
+          <div class="knob small new"><div class="knob-circle"></div><div class="knob-label">ACCENT</div></div>
+        </div>
+      </div>
+      <div class="vline"></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TILT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">LOW</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH F</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH Q</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH D</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">STEP</div>
+      <div class="step-row" style="padding-left: 0;">
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat acc"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <span class="new-tag">D</span><strong>Stacked compact LCD selectors + small comp-cluster knobs.</strong>
+    Top sub-row: SAT MODE (compact) + SAT DRV + SAT MIX + empty.
+    Bottom sub-row: CLIP MODE (compact, displaying <code>tAnH</code> / <code>dIOdE</code> / <code>CUbIC</code>) + CLIP DRV + N DECAY + ACCENT.
+    EQ unchanged on the right. SAT/EQ row grows by ~22px to fit two stacked sub-rows; STEP grid + DICE shift down. CLIP MODE labels use lowercase <code>n</code> in <code>tAnH</code> because the 7-segment glyph table doesn't define uppercase N.
+    <div class="pros-cons">
+      <div><h3>WHY</h3><p>Visual symmetry between SAT and CLIP — they're sibling stages (master-bus saturation vs per-voice waveshaper). Compact dimensions free up enough horizontal room to fit the four new controls without crowding. Re-uses the existing comp-cluster style so nothing visually invented.</p></div>
+      <div><h3>RISKS COVERED</h3><p>7-seg glyph coverage verified for all CLIP labels. lcd_selector refactor adds id_source param to avoid egui Id collision. Captions stay below knobs (current convention). Window has 74px slack so the 22px row extension fits at all UI scales.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- VARIANT A -->
+<div class="variant" id="A">
+  <div class="plugin">
+    <div class="row">
+      <div class="row-label">MASTER</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">COMP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">REACT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DRIVE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DRIFT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">VOL</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">SUB · TOP</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FSTART</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FEND</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SWEEP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DECAY</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SUB GAIN</div></div>
+      <div class="filler"></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP FREQ</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP BW</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP DEC</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP GAIN</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">METAL</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">MID</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FSTART</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FEND</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SWEEP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DECAY</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TONE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOISE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">N COLOR</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">MID GAIN</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">SAT · EQ</div>
+      <div class="knob"><div class="selector">DIODE</div><div class="knob-label">SAT MODE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SAT DRV</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SAT MIX</div></div>
+      <div class="knob new"><div class="selector">TANH</div><div class="knob-label">CLIP MODE</div></div>
+      <div class="knob new"><div class="knob-circle"></div><div class="knob-label">CLIP DRV</div></div>
+      <div class="knob new"><div class="knob-circle"></div><div class="knob-label">N DECAY</div></div>
+      <div class="knob new"><div class="knob-circle"></div><div class="knob-label">ACCENT</div></div>
+      <div class="filler"></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TILT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">LOW</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">STEP</div>
+      <div class="step-row" style="padding-left: 0;">
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat acc"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <span class="new-tag">A</span><strong>All four new knobs land in the SAT/EQ row</strong>, packed between the existing SAT trio and the EQ trio.
+    <div class="pros-cons">
+      <div><h3>PROS</h3><p>One row to find every "character" control. No vertical layout change. CLIP MODE sits next to SAT MODE — visually obvious they're related.</p></div>
+      <div><h3>CONS</h3><p>SAT/EQ row gets crowded (11 widgets across). MID NOISE DECAY is semantically MID, not SAT — knob hunting later. ACCENT is unrelated to either.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- VARIANT B -->
+<div class="variant" id="B">
+  <div class="plugin">
+    <div class="row">
+      <div class="row-label">MASTER</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">COMP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">REACT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DRIVE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DRIFT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">VOL</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">SUB · TOP</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FSTART</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FEND</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SWEEP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DECAY</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SUB GAIN</div></div>
+      <div class="filler"></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP FREQ</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP BW</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP DEC</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP GAIN</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">METAL</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">MID</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FSTART</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FEND</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SWEEP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DECAY</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TONE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOISE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">N COLOR</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">MID GAIN</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">SAT · EQ</div>
+      <div class="knob"><div class="selector">DIODE</div><div class="knob-label">SAT MODE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SAT DRV</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SAT MIX</div></div>
+      <div class="filler"></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TILT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">LOW</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH F</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH Q</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH D</div></div>
+    </div>
+    <div class="row" style="background: rgba(255,34,34,0.04);">
+      <div class="row-label" style="color: var(--red);">CHARACTER</div>
+      <div class="knob new"><div class="selector">TANH</div><div class="knob-label">CLIP MODE</div></div>
+      <div class="knob new"><div class="knob-circle"></div><div class="knob-label">CLIP DRV</div></div>
+      <div class="filler"></div>
+      <div class="knob new"><div class="knob-circle"></div><div class="knob-label">NOISE DECAY</div></div>
+      <div class="filler"></div>
+      <div class="knob new"><div class="knob-circle"></div><div class="knob-label">ACCENT AMT</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">STEP</div>
+      <div class="step-row" style="padding-left: 0;">
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat acc"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <span class="new-tag">B</span><strong>New row dedicated to the four new knobs</strong>, between SAT/EQ and STEP. Labelled CHARACTER.
+    <div class="pros-cons">
+      <div><h3>PROS</h3><p>Maximum visibility — these are the v0.6.0 features and they get a row of their own. Plenty of horizontal breathing room. Easy to introduce in marketing visuals.</p></div>
+      <div><h3>CONS</h3><p>Adds vertical height — plugin window grows. Existing rows untouched but the layout feels less compact. Sparser knob density than the rest of the panel.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- VARIANT C -->
+<div class="variant" id="C">
+  <div class="plugin">
+    <div class="row">
+      <div class="row-label">MASTER</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">COMP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">REACT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DRIVE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DRIFT</div></div>
+      <div class="knob new"><div class="knob-circle"></div><div class="knob-label">ACCENT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">VOL</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">SUB · TOP</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FSTART</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FEND</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SWEEP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DECAY</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SUB GAIN</div></div>
+      <div class="filler"></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP FREQ</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP BW</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP DEC</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TOP GAIN</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">METAL</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">MID</div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FSTART</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">FEND</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SWEEP</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">DECAY</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TONE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOISE</div></div>
+      <div class="knob new"><div class="knob-circle"></div><div class="knob-label">N DECAY</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">N COLOR</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">MID GAIN</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">SAT · EQ</div>
+      <div class="knob"><div class="selector">DIODE</div><div class="knob-label">SAT MODE</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SAT DRV</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">SAT MIX</div></div>
+      <div class="knob new"><div class="selector">TANH</div><div class="knob-label">CLIP MODE</div></div>
+      <div class="knob new"><div class="knob-circle"></div><div class="knob-label">CLIP DRV</div></div>
+      <div class="filler"></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">TILT</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">LOW</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH F</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH Q</div></div>
+      <div class="knob"><div class="knob-circle"></div><div class="knob-label">NOTCH D</div></div>
+    </div>
+    <div class="row">
+      <div class="row-label">STEP</div>
+      <div class="step-row" style="padding-left: 0;">
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat acc"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+        <div class="step on beat"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <span class="new-tag">C</span><strong>Distributed by semantic ownership.</strong> CLIP knobs sit next to SAT (it's a sister stage). NOISE DECAY sits with the other MID NOISE knobs. ACCENT sits next to DRIFT (both are "feel" knobs).
+    <div class="pros-cons">
+      <div><h3>PROS</h3><p>Each new control lives next to its conceptual cousins — discoverable. No new row, no crowded row. Re-uses the existing layout rhythm.</p></div>
+      <div><h3>CONS</h3><p>v0.6.0 features are scattered across three rows — harder to point to in a release reel. MID row gets one extra knob (8 → 9); MASTER row gains one (5 → 6). Both still fit comfortably.</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.variant').forEach(v => v.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.target).classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>

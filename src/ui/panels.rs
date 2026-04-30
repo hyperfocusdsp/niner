@@ -14,8 +14,8 @@ use crate::params::NinerParams;
 use crate::ui::knob;
 use crate::ui::theme;
 use crate::ui::widgets::{
-    draw_groove, draw_inset_display, draw_led, draw_rack_ear, draw_screw, param_knob,
-    param_knob_compact,
+    draw_groove, draw_inset_display_no_glass, draw_led, draw_rack_ear, draw_screw,
+    lit_rect_default, param_knob, param_knob_compact,
 };
 
 pub const KNOB_SIZE: f32 = 32.0;
@@ -23,6 +23,15 @@ pub const KNOB_SPACING: f32 = 52.0;
 pub const RACK_EAR_W: f32 = 16.0;
 pub const CONTENT_LEFT: f32 = RACK_EAR_W + 14.0;
 pub const HEADER_H: f32 = 28.0;
+/// Uniform chrome-button height. Every chrome cap (TEST/SAVE/DEL/PLAY/STOP/
+/// CLEAR/BOUNCE/DICE, preset arrows, SAT-row LCD arrows, the preset
+/// display, the SAT-row LCDs) renders at this height so the panel reads as
+/// a coherent piece of hardware rather than a collection of mismatched
+/// widgets.
+pub const CHROME_H: f32 = 22.0;
+/// Square chrome cap dimension (preset arrows, SAT-row LCD arrows). Same
+/// as CHROME_H — these are square buttons.
+pub const CHROME_SQ: f32 = 22.0;
 
 /// Which view the OUTPUT display is currently showing. Toggled by clicking
 /// the display itself. Lives in egui `Memory` (temp) so it persists across
@@ -31,13 +40,15 @@ pub const HEADER_H: f32 = 28.0;
 pub enum DisplayMode {
     Waveform,
     Spectrum,
+    Off,
 }
 
 impl DisplayMode {
     fn toggled(self) -> Self {
         match self {
             DisplayMode::Waveform => DisplayMode::Spectrum,
-            DisplayMode::Spectrum => DisplayMode::Waveform,
+            DisplayMode::Spectrum => DisplayMode::Off,
+            DisplayMode::Off => DisplayMode::Waveform,
         }
     }
 }
@@ -71,10 +82,13 @@ pub fn draw_chrome(
     ui: &egui::Ui,
     panel_rect: egui::Rect,
     chassis: Option<&egui::TextureHandle>,
+    screws: Option<&egui::TextureHandle>,
 ) -> f32 {
     let w = panel_rect.width();
     let h = panel_rect.height();
-    let header_center_y = panel_rect.top() + HEADER_H * 0.5;
+    // Sit the header strip below the recessed top edge band (y < 12) so it's
+    // fully on the panel surface and clears the OUTPUT/COMP bezel tops at y=38.
+    let header_center_y = panel_rect.top() + 23.0;
 
     let painter = ui.painter();
     if let Some(t) = chassis {
@@ -84,6 +98,20 @@ pub fn draw_chrome(
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
+        // Composite real screws over the (possibly clean) plate. Gated on
+        // SCREWS_BAKED so the 1×1 placeholder in tree doesn't paint.
+        if crate::ui::widgets::SCREWS_BAKED
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            if let Some(s) = screws {
+                painter.image(
+                    s.id(),
+                    panel_rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            }
+        }
     } else {
         // Procedural fallback: BG fill + edge bands + rack ears + screws.
         // All baked into the texture in the `Some` branch.
@@ -120,15 +148,6 @@ pub fn draw_chrome(
         }
     }
 
-    // Title logo is painted by the editor (texture handle lives there).
-    // Power LED stays here.
-    draw_led(
-        painter,
-        panel_rect.left() + CONTENT_LEFT + 120.0,
-        header_center_y,
-        true,
-    );
-
     painter.text(
         egui::pos2(panel_rect.right() - CONTENT_LEFT, header_center_y - 2.0),
         egui::Align2::RIGHT_CENTER,
@@ -143,44 +162,42 @@ pub fn draw_chrome(
         egui::FontId::new(8.0, egui::FontFamily::Monospace),
         egui::Color32::from_rgb(0x44, 0x44, 0x44),
     );
-
+    // Note: header subtitle / version aren't instrument()'d — `ui` isn't
+    // mutable in this signature and rewiring `&Ui` to `&mut Ui` for an
+    // edit-only path would change every caller.
     header_center_y
 }
 
 /// Draw the "TEST" button in the header. Returns true if it was clicked
 /// this frame (so the caller can dispatch a trigger).
 pub fn test_button(ui: &mut egui::Ui, panel_rect: egui::Rect, header_center_y: f32) -> bool {
-    let btn_x = panel_rect.left() + CONTENT_LEFT + 140.0;
-    let btn_w = 48.0;
-    let btn_h = 22.0;
+    let btn_x = panel_rect.left() + CONTENT_LEFT + 111.0;
+    let btn_w = 40.0;
+    let btn_h = crate::ui::layout_overrides::chrome_height(ui.ctx());
     let btn_y = header_center_y - btn_h * 0.5;
-    let btn_rect = egui::Rect::from_min_size(egui::pos2(btn_x, btn_y), egui::vec2(btn_w, btn_h));
+    let btn_rect = crate::ui::layout_overrides::instrument(
+        ui,
+        "header.test_btn",
+        egui::Rect::from_min_size(egui::pos2(btn_x, btn_y), egui::vec2(btn_w, btn_h)),
+    );
     let resp = ui.interact(
         btn_rect,
         egui::Id::new("test_trigger"),
         egui::Sense::click(),
     );
     let pressed = resp.is_pointer_button_down_on();
+    let press_amount = ui.ctx().animate_bool_with_time(
+        egui::Id::new("test_btn_anim"),
+        pressed,
+        0.06,
+    );
     {
         let painter = ui.painter();
-        let top_color = if pressed {
-            theme::BTN_DARK
-        } else {
-            theme::BTN_LIGHT
-        };
-        let bot_color = if pressed {
-            theme::BTN_LIGHT
-        } else {
-            theme::BTN_DARK
-        };
-        painter.rect_filled(btn_rect, 3.0, bot_color);
-        painter.rect_filled(
-            egui::Rect::from_min_size(btn_rect.min, egui::vec2(btn_w, btn_h * 0.5)),
-            3.0,
-            top_color,
-        );
+        let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 3.0);
+        crate::ui::widgets::draw_button_3d(painter, btn_rect, press_amount, r);
+        let text_offset = press_amount * crate::ui::widgets::BTN_PRESS_TRAVEL;
         painter.text(
-            btn_rect.center(),
+            btn_rect.center() + egui::vec2(0.0, text_offset),
             egui::Align2::CENTER_CENTER,
             "TEST",
             egui::FontId::new(10.8, egui::FontFamily::Monospace),
@@ -215,6 +232,11 @@ pub struct MasterRow<'a> {
     /// Smoothed gain reduction (positive dB) from the master-bus compressor,
     /// for the GR overlay bar drawn on top of the OUTPUT display.
     pub gr_db: f32,
+    /// Cycles-baked glass reflection PNG (`assets/display_reflection.png`),
+    /// painted over the lit content as the final layer when present. When
+    /// `None`, the procedural sheen drawn inside `draw_inset_display`
+    /// remains the visible glass effect.
+    pub display_reflection: Option<&'a egui::TextureHandle>,
 }
 
 impl<'a> MasterRow<'a> {
@@ -228,10 +250,21 @@ impl<'a> MasterRow<'a> {
         // The full OUTPUT display rect — also the hit target for the
         // waveform↔spectrum toggle. Interact *before* painting so clicks
         // register on the z-top layer regardless of which content we draw.
-        let display_rect = egui::Rect::from_min_size(
+        // The instrument() wrapper applies any layout-editor offset; we
+        // pull dx/dy out of the resulting rect and shift the local
+        // wf_left / master_y so all downstream painters move with it.
+        let base_display_rect = egui::Rect::from_min_size(
             egui::pos2(self.wf_left, self.master_y),
             egui::vec2(self.wf_width, self.wf_height),
         );
+        let display_rect =
+            crate::ui::layout_overrides::instrument(ui, "master.output_display", base_display_rect);
+        let display_dx = display_rect.left() - base_display_rect.left();
+        let display_dy = display_rect.top() - base_display_rect.top();
+        let wf_left = self.wf_left + display_dx;
+        let master_y = self.master_y + display_dy;
+        let wf_width = self.wf_width;
+        let wf_height = self.wf_height;
         let toggle_resp = ui
             .interact(
                 display_rect,
@@ -239,32 +272,44 @@ impl<'a> MasterRow<'a> {
                 egui::Sense::click(),
             )
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text("Click to toggle waveform / spectrum");
+            .on_hover_text("Click to cycle: bars / spectrum / off");
         if toggle_resp.clicked() {
             set_display_mode(ui.ctx(), self.display_mode.toggled());
         }
 
         let painter = ui.painter();
-        draw_inset_display(
-            painter,
-            self.wf_left,
-            self.master_y,
-            self.wf_width,
-            self.wf_height,
+        // Full-width dark background so the display surface extends
+        // border-to-border, covering the master knob and COMP areas.
+        let full_display_w = panel_rect.right() - CONTENT_LEFT - wf_left;
+        painter.rect_filled(
+            egui::Rect::from_min_size(
+                egui::pos2(wf_left, master_y),
+                egui::vec2(full_display_w, wf_height),
+            ),
+            3.0,
+            theme::BG_DISPLAY,
         );
-        // Content rect — asymmetrically inset from the bezel so the dark
-        // frame extends further on left/top/bottom (right margin matches
-        // bezel padding so 7-seg / GR-bar tail stays flush with the right
-        // edge as before).
-        let lit = crate::ui::widgets::lit_rect_default(
-            self.wf_left,
-            self.master_y,
-            self.wf_width,
-            self.wf_height,
+        // Inset display under-content (frame + lit BG + scan-lines + red
+        // ambient glow). Glass reflection is painted later, after bars/
+        // waveform, so it sits on top of the lit content like real glass.
+        draw_inset_display_no_glass(
+            painter,
+            wf_left,
+            master_y,
+            wf_width,
+            wf_height,
+            crate::ui::widgets::DisplayInsets::DEFAULT,
+        );
+        let lit = lit_rect_default(
+            wf_left,
+            master_y,
+            wf_width,
+            wf_height,
         );
         let mode_label = match self.display_mode {
             DisplayMode::Waveform => "OUTPUT",
             DisplayMode::Spectrum => "SPECTRUM",
+            DisplayMode::Off => "OFF",
         };
         painter.text(
             egui::pos2(lit.left() + 2.0, lit.top() + 1.0),
@@ -279,20 +324,16 @@ impl<'a> MasterRow<'a> {
                     let n = self.waveform_peaks.len();
                     let mid_y = lit.top() + lit.height() / 2.0;
                     for (i, &peak) in self.waveform_peaks.iter().enumerate() {
-                        let x = lit.left()
-                            + 2.0
-                            + (i as f32 / n as f32) * (lit.width() - 4.0);
+                        let x = lit.left() + 2.0 + (i as f32 / n as f32) * (lit.width() - 4.0);
                         let amp = peak.min(1.0) * lit.height() * 0.475;
                         painter.line_segment(
-                            [
-                                egui::pos2(x, mid_y - amp),
-                                egui::pos2(x, mid_y + amp),
-                            ],
+                            [egui::pos2(x, mid_y - amp), egui::pos2(x, mid_y + amp)],
                             egui::Stroke::new(1.2, theme::RED_WAVEFORM),
                         );
                     }
                 }
             }
+            DisplayMode::Off => {}
             DisplayMode::Spectrum => {
                 // Leave ~10 px at the top clear for the GR overlay + label;
                 // bars grow up from `bars_bottom` toward `bars_top`.
@@ -322,10 +363,8 @@ impl<'a> MasterRow<'a> {
                     }
 
                     // Peak-hold dot — a 1.2 px slab at the current hold level.
-                    let hold_db =
-                        self.spectrum_peak_hold[i].clamp(DB_FLOOR, DB_CEIL);
-                    let hold_norm =
-                        ((hold_db - DB_FLOOR) / db_span).clamp(0.0, 1.0);
+                    let hold_db = self.spectrum_peak_hold[i].clamp(DB_FLOOR, DB_CEIL);
+                    let hold_norm = ((hold_db - DB_FLOOR) / db_span).clamp(0.0, 1.0);
                     if hold_norm > (norm + 0.005) {
                         let hold_y = bars_bottom - hold_norm * plot_h;
                         painter.rect_filled(
@@ -341,6 +380,19 @@ impl<'a> MasterRow<'a> {
             }
         }
 
+        // Cycles-baked glass reflection overlay. Painted AFTER bars /
+        // waveform so the highlights sit on top of lit content like real
+        // glass; painted BEFORE the GR overlay + mode label so those stay
+        // crisp and readable above the reflection.
+        if let Some(handle) = self.display_reflection {
+            painter.image(
+                handle.id(),
+                lit,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+
         // ── Gain-reduction overlay bar ──
         // Painted along the top of the lit rect, just under the mode
         // label. Fills right-to-left, 0..18 dB of reduction maps to 0..full
@@ -354,10 +406,7 @@ impl<'a> MasterRow<'a> {
             let bar_h = 3.0;
             // Housing (dim red, full width).
             painter.rect_filled(
-                egui::Rect::from_min_size(
-                    egui::pos2(bar_x, bar_y),
-                    egui::vec2(bar_w_total, bar_h),
-                ),
+                egui::Rect::from_min_size(egui::pos2(bar_x, bar_y), egui::vec2(bar_w_total, bar_h)),
                 1.0,
                 theme::RED_AMBIENT,
             );
@@ -414,12 +463,14 @@ impl<'a> MasterRow<'a> {
         }
 
         // Master knobs strip to the right of the display
-        let knob_row_y = self.master_y + 4.0;
-        let knobs_x = self.wf_left + self.wf_width + 16.0;
+        let knob_row_y = master_y + 4.0;
+        let knobs_x = wf_left + wf_width + 16.0;
         let master_knob_rect = egui::Rect::from_min_size(
             egui::pos2(knobs_x, knob_row_y),
             egui::vec2(KNOB_SPACING * 3.0, KNOB_SIZE + 30.0),
         );
+        let master_knob_rect =
+            crate::ui::layout_overrides::instrument(ui, "master.knobs", master_knob_rect);
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(master_knob_rect), |ui| {
             ui.horizontal(|ui| {
                 param_knob(
@@ -484,20 +535,11 @@ impl<'a> MasterRow<'a> {
             let strip_right = panel_rect.right() - CONTENT_LEFT;
             let strip_w = (strip_right - strip_x).max(0.0);
             if strip_w >= 80.0 {
-                // Inset display-style background for visual consistency with
-                // the OUTPUT screen to the left.
-                draw_inset_display(
-                    ui.painter(),
+                let comp_lit = lit_rect_default(
                     strip_x + 2.0,
-                    self.master_y,
+                    master_y,
                     strip_w - 4.0,
-                    self.wf_height,
-                );
-                let comp_lit = crate::ui::widgets::lit_rect_default(
-                    strip_x + 2.0,
-                    self.master_y,
-                    strip_w - 4.0,
-                    self.wf_height,
+                    wf_height,
                 );
                 ui.painter().text(
                     egui::pos2(comp_lit.left() + 2.0, comp_lit.top() + 1.0),
@@ -518,7 +560,11 @@ impl<'a> MasterRow<'a> {
                     egui::Align2::RIGHT_CENTER,
                     "LIM",
                     egui::FontId::new(7.0, egui::FontFamily::Monospace),
-                    if lim_on { theme::WHITE } else { theme::TEXT_DIM },
+                    if lim_on {
+                        theme::WHITE
+                    } else {
+                        theme::TEXT_DIM
+                    },
                 );
                 let lim_rect = egui::Rect::from_center_size(
                     egui::pos2(lim_cx - 4.0, lim_cy),
@@ -543,11 +589,13 @@ impl<'a> MasterRow<'a> {
                 let knob_cell_w = small_knob + 10.0;
                 let row_w = knob_cell_w * 3.0 + 6.0;
                 let row_x = strip_x + ((strip_w - row_w) * 0.5).max(4.0);
-                let row_y = self.master_y + 14.0;
+                let row_y = master_y + 14.0;
                 let comp_rect = egui::Rect::from_min_size(
                     egui::pos2(row_x, row_y),
                     egui::vec2(row_w, small_knob + 24.0),
                 );
+                let comp_rect =
+                    crate::ui::layout_overrides::instrument(ui, "master.comp_macro", comp_rect);
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(comp_rect), |ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     ui.horizontal(|ui| {
@@ -624,30 +672,12 @@ pub fn draw_sub_top_row(
     panel_rect: egui::Rect,
     master_bottom_y: f32,
 ) -> f32 {
-    let row_label_y = master_bottom_y + 8.0;
-    let row_groove_y = row_label_y + 14.0;
+    let row_groove_y = master_bottom_y + 22.0;
     let row_knob_y = row_groove_y + 4.0;
     let divider_x = panel_rect.left() + CONTENT_LEFT + KNOB_SPACING * 5.0 - 6.0;
 
     {
         let painter = ui.painter();
-        painter.text(
-            egui::pos2(panel_rect.left() + CONTENT_LEFT, row_label_y),
-            egui::Align2::LEFT_TOP,
-            "SUB",
-            egui::FontId::new(11.0, egui::FontFamily::Monospace),
-            theme::WHITE,
-        );
-        painter.text(
-            egui::pos2(
-                panel_rect.left() + CONTENT_LEFT + KNOB_SPACING * 5.0,
-                row_label_y,
-            ),
-            egui::Align2::LEFT_TOP,
-            "TOP",
-            egui::FontId::new(11.0, egui::FontFamily::Monospace),
-            theme::WHITE,
-        );
         draw_groove(
             painter,
             panel_rect.left() + CONTENT_LEFT - 4.0,
@@ -668,6 +698,8 @@ pub fn draw_sub_top_row(
         egui::pos2(panel_rect.left() + CONTENT_LEFT, row_knob_y),
         egui::vec2(KNOB_SPACING * 5.0, KNOB_SIZE + 30.0),
     );
+    let sub_knob_rect =
+        crate::ui::layout_overrides::instrument(ui, "row.sub.knobs", sub_knob_rect);
     ui.allocate_new_ui(egui::UiBuilder::new().max_rect(sub_knob_rect), |ui| {
         ui.horizontal(|ui| {
             param_knob(
@@ -746,6 +778,8 @@ pub fn draw_sub_top_row(
         ),
         egui::vec2(KNOB_SPACING * 5.0, KNOB_SIZE + 30.0),
     );
+    let top_knob_rect =
+        crate::ui::layout_overrides::instrument(ui, "row.top.knobs", top_knob_rect);
     ui.allocate_new_ui(egui::UiBuilder::new().max_rect(top_knob_rect), |ui| {
         ui.horizontal(|ui| {
             param_knob(
@@ -835,6 +869,8 @@ pub fn draw_sub_top_row(
             egui::pos2(col_x, col_row_y),
             egui::vec2(row_w, small_knob + 22.0),
         );
+        let knob_rect =
+            crate::ui::layout_overrides::instrument(ui, "top.precise_comp", knob_rect);
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             ui.horizontal(|ui| {
@@ -898,6 +934,45 @@ pub fn draw_sub_top_row(
         );
     }
 
+    // Section labels at the bottom of the section, inside the borders —
+    // i.e., in the 14 px gap that used to hold the MID label above the
+    // MID groove. Knobs stay at their original y; only the label moves.
+    let label_y = row_knob_y + KNOB_SIZE + 34.0;
+    let row_label_font = crate::ui::layout_overrides::label_font(ui.ctx(), 11.0);
+    let label_size = egui::vec2(40.0, 14.0);
+    let sub_pos = crate::ui::layout_overrides::instrument_text(
+        ui,
+        "label.sub",
+        egui::pos2(panel_rect.left() + CONTENT_LEFT, label_y),
+        label_size,
+        egui::Align2::LEFT_TOP,
+    );
+    let top_pos = crate::ui::layout_overrides::instrument_text(
+        ui,
+        "label.top",
+        egui::pos2(
+            panel_rect.left() + CONTENT_LEFT + KNOB_SPACING * 5.0,
+            label_y,
+        ),
+        label_size,
+        egui::Align2::LEFT_TOP,
+    );
+    let painter = ui.painter();
+    painter.text(
+        sub_pos,
+        egui::Align2::LEFT_TOP,
+        "SUB",
+        row_label_font.clone(),
+        theme::WHITE,
+    );
+    painter.text(
+        top_pos,
+        egui::Align2::LEFT_TOP,
+        "TOP",
+        row_label_font,
+        theme::WHITE,
+    );
+
     row_knob_y + KNOB_SIZE + 34.0
 }
 
@@ -909,19 +984,11 @@ pub fn draw_mid_row(
     panel_rect: egui::Rect,
     sub_top_bottom_y: f32,
 ) -> f32 {
-    let row_label_y = sub_top_bottom_y;
-    let row_groove_y = row_label_y + 14.0;
+    let row_groove_y = sub_top_bottom_y + 14.0;
     let row_knob_y = row_groove_y + 4.0;
 
     {
         let painter = ui.painter();
-        painter.text(
-            egui::pos2(panel_rect.left() + CONTENT_LEFT, row_label_y),
-            egui::Align2::LEFT_TOP,
-            "MID",
-            egui::FontId::new(11.0, egui::FontFamily::Monospace),
-            theme::WHITE,
-        );
         draw_groove(
             painter,
             panel_rect.left() + CONTENT_LEFT - 4.0,
@@ -934,6 +1001,8 @@ pub fn draw_mid_row(
         egui::pos2(panel_rect.left() + CONTENT_LEFT, row_knob_y),
         egui::vec2(KNOB_SPACING * 10.0, KNOB_SIZE + 30.0),
     );
+    let mid_knob_rect =
+        crate::ui::layout_overrides::instrument(ui, "row.mid.knobs", mid_knob_rect);
     ui.allocate_new_ui(egui::UiBuilder::new().max_rect(mid_knob_rect), |ui| {
         ui.horizontal(|ui| {
             param_knob(
@@ -1086,6 +1155,8 @@ pub fn draw_mid_row(
             egui::pos2(row_x, row_y),
             egui::vec2(row_w, small_knob + 22.0),
         );
+        let knob_rect =
+            crate::ui::layout_overrides::instrument(ui, "mid.clap_cluster", knob_rect);
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             ui.horizontal(|ui| {
@@ -1146,7 +1217,11 @@ pub fn draw_mid_row(
             egui::Align2::LEFT_CENTER,
             "CLAP",
             egui::FontId::new(9.0, egui::FontFamily::Monospace),
-            if clap_on { theme::WHITE } else { theme::TEXT_DIM },
+            if clap_on {
+                theme::WHITE
+            } else {
+                theme::TEXT_DIM
+            },
         );
         let clap_rect = egui::Rect::from_center_size(
             egui::pos2(clap_cx + 14.0, clap_cy),
@@ -1166,6 +1241,25 @@ pub fn draw_mid_row(
             clap_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         }
     }
+
+    // Section label at the bottom of the section, inside the borders —
+    // i.e., in the 14 px gap that used to hold the SAT label above the
+    // SAT/EQ groove. Knobs stay at their original y; only the label moves.
+    let label_y = row_knob_y + KNOB_SIZE + 34.0;
+    let mid_pos = crate::ui::layout_overrides::instrument_text(
+        ui,
+        "label.mid",
+        egui::pos2(panel_rect.left() + CONTENT_LEFT, label_y),
+        egui::vec2(40.0, 14.0),
+        egui::Align2::LEFT_TOP,
+    );
+    ui.painter().text(
+        mid_pos,
+        egui::Align2::LEFT_TOP,
+        "MID",
+        crate::ui::layout_overrides::label_font(ui.ctx(), 11.0),
+        theme::WHITE,
+    );
 
     row_knob_y + KNOB_SIZE + 34.0
 }
@@ -1201,20 +1295,43 @@ pub fn draw_sat_eq_row(
     let row_knob_y = row_groove_y + 4.0;
     let eq_divider_x = panel_rect.left() + CONTENT_LEFT + KNOB_SPACING * 4.0 + 40.0;
 
+    let row_label_font = crate::ui::layout_overrides::label_font(ui.ctx(), 11.0);
+    let sat_label_pos = crate::ui::layout_overrides::instrument_text(
+        ui,
+        "label.sat",
+        egui::pos2(
+            panel_rect.left() + CONTENT_LEFT,
+            row_knob_y + SAT_CLUSTER_H - 14.0,
+        ),
+        egui::vec2(40.0, 14.0),
+        egui::Align2::LEFT_TOP,
+    );
+    let eq_label_pos = crate::ui::layout_overrides::instrument_text(
+        ui,
+        "label.eq",
+        egui::pos2(eq_divider_x + 10.0, row_knob_y + SAT_CLUSTER_H - 14.0),
+        egui::vec2(30.0, 14.0),
+        egui::Align2::LEFT_TOP,
+    );
     {
         let painter = ui.painter();
+        // SAT label tucked into the bottom-left corner of the SAT section
+        // (inside the borders, not above the separator). Sits below the
+        // second sub-row of the SAT cluster but above the sat_eq_return
+        // boundary — i.e., still inside the SAT section. EQ stays at the
+        // top-left of its sub-section.
         painter.text(
-            egui::pos2(panel_rect.left() + CONTENT_LEFT, row_label_y),
+            sat_label_pos,
             egui::Align2::LEFT_TOP,
             "SAT",
-            egui::FontId::new(11.0, egui::FontFamily::Monospace),
+            row_label_font.clone(),
             theme::WHITE,
         );
         painter.text(
-            egui::pos2(eq_divider_x + 10.0, row_label_y),
+            eq_label_pos,
             egui::Align2::LEFT_TOP,
             "EQ",
-            egui::FontId::new(11.0, egui::FontFamily::Monospace),
+            row_label_font,
             theme::WHITE,
         );
         draw_groove(
@@ -1246,6 +1363,7 @@ pub fn draw_sat_eq_row(
         egui::pos2(panel_rect.left() + CONTENT_LEFT, row_knob_y),
         egui::vec2(KNOB_SPACING * 4.0 + 36.0, SAT_CLUSTER_H),
     );
+    let sat_rect = crate::ui::layout_overrides::instrument(ui, "row.sat.cluster", sat_rect);
     const SMALL_KNOB: f32 = 18.0;
     const SAT_MODES: &[&str] = &["OFF", "SOFt", "dIOdE", "tAPE"];
     const CLIP_MODES: &[&str] = &["OFF", "tAnH", "dIOdE", "CUbIC"];
@@ -1358,6 +1476,7 @@ pub fn draw_sat_eq_row(
         egui::pos2(eq_divider_x + 10.0, row_knob_y),
         egui::vec2(KNOB_SPACING * 5.0, KNOB_SIZE + 30.0),
     );
+    let eq_rect = crate::ui::layout_overrides::instrument(ui, "row.eq.knobs", eq_rect);
     ui.allocate_new_ui(egui::UiBuilder::new().max_rect(eq_rect), |ui| {
         ui.horizontal(|ui| {
             param_knob(
@@ -1439,19 +1558,64 @@ pub fn draw_sat_eq_row(
     }
 }
 
-/// Beveled "BOUNCE" button in the right gap of the SAT/EQ row. Styled to
-/// match [`test_button`] so it reads as part of the same visual family.
-/// Returns `true` on the frame the user clicks it.
-pub fn draw_bounce_button(ui: &mut egui::Ui, panel_rect: egui::Rect, top_y: f32) -> bool {
-    let btn_w = 48.0;
-    let btn_h = 18.0;
-    // Right-anchor to the same vertical column as PRECISE / CLAP / FILTER /
-    // DICE so KNE, TAIL, POST, the lock LEDs and BOUNCE all share a clean
-    // right edge. The cluster col_x = panel.right - CONTENT_LEFT - 96 + 4
-    // and PRECISE-style row_w = 90 → right edge sits at col_x + 90.
-    let cluster_right = panel_rect.right() - CONTENT_LEFT - 96.0 + 4.0 + 90.0;
-    let btn_x = cluster_right - btn_w;
-    let btn_rect = egui::Rect::from_min_size(egui::pos2(btn_x, top_y), egui::vec2(btn_w, btn_h));
+/// Result of one frame of the BOUNCE + CLEAR row.
+#[derive(Default)]
+pub struct BounceRowResult {
+    pub bounce_clicked: bool,
+    pub clear_clicked: bool,
+}
+
+/// Beveled "BOUNCE" + "CLEAR" buttons in the right gap of the SAT/EQ row.
+/// CLEAR sits to the left of BOUNCE; clicking it wipes the sequencer
+/// pattern. Both styled to match [`test_button`] so they read as part of
+/// the same visual family, and both share PLAY's 40 × 22 footprint.
+pub fn draw_bounce_button(ui: &mut egui::Ui, panel_rect: egui::Rect, top_y: f32) -> BounceRowResult {
+    // Match PLAY + step-pad height/width so the seq-row chrome reads as a
+    // single visual family.
+    let btn_w = 40.0;
+    let btn_h = crate::ui::layout_overrides::chrome_height(ui.ctx());
+    // CLEAR's left edge sits at col_x so it's vertically aligned with
+    // DICE (one row up). BOUNCE then sits 15 px to the right of CLEAR —
+    // the same chassis gap that separates step-pad 16 from CLEAR. The
+    // dice-row lock LEDs (S/M/T/X/E/C) are anchored to BOUNCE.left so the
+    // whole right-half cluster (LEDs + BOUNCE) reads as one unit.
+    let col_x = panel_rect.right() - CONTENT_LEFT - 96.0 + 4.0;
+    let gap = 15.0;
+    let clear_rect = crate::ui::layout_overrides::instrument(
+        ui,
+        "seq.clear_btn",
+        egui::Rect::from_min_size(egui::pos2(col_x, top_y), egui::vec2(btn_w, btn_h)),
+    );
+    let btn_x = col_x + btn_w + gap;
+    let btn_rect = crate::ui::layout_overrides::instrument(
+        ui,
+        "seq.bounce_btn",
+        egui::Rect::from_min_size(egui::pos2(btn_x, top_y), egui::vec2(btn_w, btn_h)),
+    );
+    let clear_resp = ui.interact(
+        clear_rect,
+        egui::Id::new("seq_clear"),
+        egui::Sense::click(),
+    );
+    let clear_press = clear_resp.is_pointer_button_down_on();
+    let clear_press_amount = ui.ctx().animate_bool_with_time(
+        egui::Id::new("seq_clear_anim"),
+        clear_press,
+        0.06,
+    );
+    {
+        let painter = ui.painter();
+        let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 3.0);
+        crate::ui::widgets::draw_button_3d(painter, clear_rect, clear_press_amount, r);
+        let text_offset = clear_press_amount * crate::ui::widgets::BTN_PRESS_TRAVEL;
+        painter.text(
+            clear_rect.center() + egui::vec2(0.0, text_offset),
+            egui::Align2::CENTER_CENTER,
+            "CLEAR",
+            egui::FontId::new(10.0, egui::FontFamily::Monospace),
+            theme::WHITE,
+        );
+    }
 
     let resp = ui.interact(
         btn_rect,
@@ -1459,26 +1623,18 @@ pub fn draw_bounce_button(ui: &mut egui::Ui, panel_rect: egui::Rect, top_y: f32)
         egui::Sense::click(),
     );
     let pressed = resp.is_pointer_button_down_on();
+    let press_amount = ui.ctx().animate_bool_with_time(
+        egui::Id::new("bounce_btn_anim"),
+        pressed,
+        0.06,
+    );
     {
         let painter = ui.painter();
-        let top_color = if pressed {
-            theme::BTN_DARK
-        } else {
-            theme::BTN_LIGHT
-        };
-        let bot_color = if pressed {
-            theme::BTN_LIGHT
-        } else {
-            theme::BTN_DARK
-        };
-        painter.rect_filled(btn_rect, 3.0, bot_color);
-        painter.rect_filled(
-            egui::Rect::from_min_size(btn_rect.min, egui::vec2(btn_w, btn_h * 0.5)),
-            3.0,
-            top_color,
-        );
+        let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 3.0);
+        crate::ui::widgets::draw_button_3d(painter, btn_rect, press_amount, r);
+        let text_offset = press_amount * crate::ui::widgets::BTN_PRESS_TRAVEL;
         painter.text(
-            btn_rect.center(),
+            btn_rect.center() + egui::vec2(0.0, text_offset),
             egui::Align2::CENTER_CENTER,
             "BOUNCE",
             egui::FontId::new(10.0, egui::FontFamily::Monospace),
@@ -1486,10 +1642,17 @@ pub fn draw_bounce_button(ui: &mut egui::Ui, panel_rect: egui::Rect, top_y: f32)
         );
     }
     let clicked = resp.clicked();
+    let clear_clicked = clear_resp.clicked();
     if resp.hovered() {
         resp.on_hover_text_at_pointer("Export one hit to WAV/AIFF");
     }
-    clicked
+    if clear_resp.hovered() {
+        clear_resp.on_hover_text_at_pointer("Clear all 16 steps + accents");
+    }
+    BounceRowResult {
+        bounce_clicked: clicked,
+        clear_clicked,
+    }
 }
 
 pub fn draw_filter_cluster(
@@ -1512,6 +1675,8 @@ pub fn draw_filter_cluster(
         egui::pos2(col_x, knob_y),
         egui::vec2(row_w, small_knob + 22.0),
     );
+    let knob_rect =
+        crate::ui::layout_overrides::instrument(ui, "row.eq.filter_cluster", knob_rect);
     ui.allocate_new_ui(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         ui.horizontal(|ui| {
@@ -1586,10 +1751,7 @@ pub fn draw_filter_cluster(
     } else {
         theme::TEXT_DIM
     };
-    let led_rect = egui::Rect::from_min_size(
-        egui::pos2(led_x, led_y),
-        egui::vec2(32.0, 10.0),
-    );
+    let led_rect = egui::Rect::from_min_size(egui::pos2(led_x, led_y), egui::vec2(32.0, 10.0));
     let led_resp = ui.interact(
         led_rect,
         egui::Id::new("dj_filter_pre_led"),
@@ -1618,26 +1780,27 @@ pub fn draw_dice_row(
 ) -> bool {
     let col_x = panel_rect.right() - CONTENT_LEFT - 96.0 + 4.0;
 
-    let btn_w = 32.0;
-    let btn_h = 16.0;
-    let btn_rect = egui::Rect::from_min_size(
-        egui::pos2(col_x, top_y),
-        egui::vec2(btn_w, btn_h),
+    let btn_w = 40.0;
+    let btn_h = crate::ui::layout_overrides::chrome_height(ui.ctx());
+    let btn_rect = crate::ui::layout_overrides::instrument(
+        ui,
+        "header.dice_btn",
+        egui::Rect::from_min_size(egui::pos2(col_x, top_y), egui::vec2(btn_w, btn_h)),
     );
     let resp = ui.interact(btn_rect, egui::Id::new("dice_btn"), egui::Sense::click());
     let pressed = resp.is_pointer_button_down_on();
+    let press_amount = ui.ctx().animate_bool_with_time(
+        egui::Id::new("dice_btn_anim"),
+        pressed,
+        0.06,
+    );
     {
         let painter = ui.painter();
-        let top_color = if pressed { theme::BTN_DARK } else { theme::BTN_LIGHT };
-        let bot_color = if pressed { theme::BTN_LIGHT } else { theme::BTN_DARK };
-        painter.rect_filled(btn_rect, 2.0, bot_color);
-        painter.rect_filled(
-            egui::Rect::from_min_size(btn_rect.min, egui::vec2(btn_w, btn_h * 0.5)),
-            2.0,
-            top_color,
-        );
+        let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 2.0);
+        crate::ui::widgets::draw_button_3d(painter, btn_rect, press_amount, r);
+        let text_offset = press_amount * crate::ui::widgets::BTN_PRESS_TRAVEL;
         painter.text(
-            btn_rect.center(),
+            btn_rect.center() + egui::vec2(0.0, text_offset),
             egui::Align2::CENTER_CENTER,
             "DICE",
             egui::FontId::new(8.0, egui::FontFamily::Monospace),
@@ -1648,8 +1811,13 @@ pub fn draw_dice_row(
 
     let labels = ["S", "M", "T", "X", "E", "C"];
     let current_locks = locks.load(std::sync::atomic::Ordering::Relaxed);
-    let led_start_x = col_x + btn_w + 4.0;
-    let led_spacing = 9.0;
+    // Align the 6 lock LEDs as one unit with the BOUNCE button below.
+    // BOUNCE.left sits at col_x + btn_w + 15 (a 15-px chassis gap that
+    // matches step-16 → CLEAR), so the LED row starts at the same x.
+    // 6 LEDs at 7-px spacing fit exactly in the 40-px BOUNCE width
+    // (5 gaps × 7 + ~5 LED diameter).
+    let led_start_x = col_x + btn_w + 15.0;
+    let led_spacing = 7.0;
 
     for (i, label) in labels.iter().enumerate() {
         let bit = 1u8 << i;
@@ -1675,18 +1843,19 @@ pub fn draw_dice_row(
         } else {
             egui::Color32::from_rgb(0x33, 0x22, 0x22)
         };
-        ui.painter().circle_filled(
-            egui::pos2(lx + 3.0, ly + 2.0),
-            2.5,
-            dot_color,
-        );
+        ui.painter()
+            .circle_filled(egui::pos2(lx + 3.0, ly + 2.0), 2.5, dot_color);
 
         ui.painter().text(
             egui::pos2(lx + 3.0, ly + 7.0),
             egui::Align2::CENTER_TOP,
             *label,
             egui::FontId::new(6.0, egui::FontFamily::Monospace),
-            if is_locked { theme::WHITE } else { theme::TEXT_DIM },
+            if is_locked {
+                theme::WHITE
+            } else {
+                theme::TEXT_DIM
+            },
         );
     }
 
@@ -1717,10 +1886,17 @@ pub struct TempoEditState {
 /// drag in progress) and the last step index the pointer painted — used
 /// to fill in gaps on fast drags where the pointer jumps multiple pads
 /// between frames.
+///
+/// `click_origin` records the step index + its prior on/accent state at
+/// press time so that on release-without-drag we can apply the 909-style
+/// 3-state cycle (empty → active → active+accent → empty). When the drag
+/// extends to other steps, the origin's accent isn't cycled — drag means
+/// "clear path", click means "advance state".
 #[derive(Default)]
 pub struct SequencerUiState {
     pub paint_mode: Option<bool>,
     pub last_painted: Option<usize>,
+    pub click_origin: Option<(usize, bool, bool)>,
     pub tempo_edit: TempoEditState,
 }
 
@@ -1736,7 +1912,7 @@ pub struct SequencerUiState {
 ///     - Clicking elsewhere returns to Idle
 ///
 /// BPM is clamped to [40, 240] by `Sequencer::set_bpm`.
-fn draw_tempo_widget(
+pub fn draw_tempo_widget(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
     seq: &crate::sequencer::Sequencer,
@@ -1893,9 +2069,8 @@ fn draw_tempo_widget(
             let right_1 = i.consume_key(egui::Modifiers::SHIFT, egui::Key::ArrowRight);
             let left_10 = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft);
             let left_1 = i.consume_key(egui::Modifiers::SHIFT, egui::Key::ArrowLeft);
-            let delta = (right_10 as i32) * 10 + (right_1 as i32)
-                - (left_10 as i32) * 10
-                - (left_1 as i32);
+            let delta =
+                (right_10 as i32) * 10 + (right_1 as i32) - (left_10 as i32) * 10 - (left_1 as i32);
             if delta != 0 {
                 let new_bpm = (seq.bpm().round() as i32 + delta).clamp(40, 240);
                 seq.set_bpm(new_bpm as f32);
@@ -1925,22 +2100,15 @@ pub fn draw_sequencer_row(
     let row_label_y = sat_eq_bottom_y + 4.0;
     let row_groove_y = row_label_y + 14.0;
     let pad_top = row_groove_y + 6.0;
-    let pad_h = 22.0;
+    let pad_h = crate::ui::layout_overrides::chrome_height(ui.ctx());
     let pad_w = 26.0;
     let pad_gap = 3.0;
 
     let host_synced = seq.is_host_synced();
 
-    // "STEP" label + groove
+    // Groove for the sequencer row.
     {
         let painter = ui.painter();
-        painter.text(
-            egui::pos2(panel_rect.left() + CONTENT_LEFT, row_label_y),
-            egui::Align2::LEFT_TOP,
-            "STEP",
-            egui::FontId::new(11.0, egui::FontFamily::Monospace),
-            theme::WHITE,
-        );
         draw_groove(
             painter,
             panel_rect.left() + CONTENT_LEFT - 4.0,
@@ -1949,21 +2117,22 @@ pub fn draw_sequencer_row(
         );
     }
 
-    // BPM readout — interactive in standalone, read-only in host-synced mode.
-    draw_tempo_widget(
-        ui,
-        egui::pos2(panel_rect.left() + CONTENT_LEFT + 60.0, row_label_y),
-        seq,
-        host_synced,
-        &mut ui_state.tempo_edit,
-    );
+    // BPM readout has been hoisted to the lower-left corner of the master
+    // display (see editor.rs after MasterRow.draw) so the SAT/EQ → seq
+    // gap stays visually clean. The tempo state still lives in
+    // `ui_state.tempo_edit` because click-to-arm and double-click-to-edit
+    // are managed across frames there.
 
     // Play / stop button — click to toggle in standalone; shows (and is
     // disabled to) the effective host state in DAW mode.
     let play_w = 40.0;
-    let play_rect = egui::Rect::from_min_size(
-        egui::pos2(panel_rect.left() + CONTENT_LEFT, pad_top),
-        egui::vec2(play_w, pad_h),
+    let play_rect = crate::ui::layout_overrides::instrument(
+        ui,
+        "seq.play_btn",
+        egui::Rect::from_min_size(
+            egui::pos2(panel_rect.left() + CONTENT_LEFT, pad_top),
+            egui::vec2(play_w, pad_h),
+        ),
     );
     let play_resp = ui.interact(
         play_rect,
@@ -1977,25 +2146,22 @@ pub fn draw_sequencer_row(
     if play_resp.clicked() && !host_synced {
         seq.toggle_running();
     }
+    let running = seq.is_running_effective();
+    // Running = button shows pushed-in (latched) so the user sees sequencer
+    // state at a glance. Host-synced is a distinct mode and doesn't latch —
+    // it just dims the label.
+    let visually_pressed = running && !host_synced;
+    // Slightly slower animation here than for the momentary buttons so the
+    // running latch reads as deliberate state rather than a click flash.
+    let play_press_amount = ui.ctx().animate_bool_with_time(
+        egui::Id::new("seq_play_anim"),
+        visually_pressed,
+        0.10,
+    );
     {
         let painter = ui.painter();
-        let running = seq.is_running_effective();
-        let top = if running {
-            theme::BTN_LIGHT
-        } else {
-            theme::BTN_DARK
-        };
-        let bot = if running {
-            theme::BTN_DARK
-        } else {
-            theme::BTN_LIGHT
-        };
-        painter.rect_filled(play_rect, 3.0, bot);
-        painter.rect_filled(
-            egui::Rect::from_min_size(play_rect.min, egui::vec2(play_w, pad_h * 0.5)),
-            3.0,
-            top,
-        );
+        let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 3.0);
+        crate::ui::widgets::draw_button_3d(painter, play_rect, play_press_amount, r);
         let label = if host_synced {
             "HOST"
         } else if running {
@@ -2008,8 +2174,9 @@ pub fn draw_sequencer_row(
         } else {
             theme::WHITE
         };
+        let text_offset = play_press_amount * crate::ui::widgets::BTN_PRESS_TRAVEL;
         painter.text(
-            play_rect.center(),
+            play_rect.center() + egui::vec2(0.0, text_offset),
             egui::Align2::CENTER_CENTER,
             label,
             egui::FontId::new(10.0, egui::FontFamily::Monospace),
@@ -2019,24 +2186,58 @@ pub fn draw_sequencer_row(
 
     // 16 step pads — centered after the play button, with a small gap.
     let pads_total_w = pad_w * 16.0 + pad_gap * 15.0;
-    let pads_start_x = play_rect.right() + 12.0;
-    // If there's still room on the right, leave it for future features.
-    let _ = pads_total_w;
+    let base_pads_start_x = play_rect.right() + 12.0;
+    let base_pads_top = pad_top;
+    let pads_base_rect = egui::Rect::from_min_size(
+        egui::pos2(base_pads_start_x, base_pads_top),
+        egui::vec2(pads_total_w, pad_h),
+    );
+    let pads_rect =
+        crate::ui::layout_overrides::instrument(ui, "seq.pads_cluster", pads_base_rect);
+    let pads_start_x = pads_rect.left();
+    let pad_top = pads_rect.top();
 
     // Snapshot pointer/button state once per frame for the drag logic.
-    // `shift_down` is read alongside so a shift-click can be detected as
-    // an accent toggle without dragging into the paint path below.
-    let (primary_down, primary_released, pointer_pos, shift_down) = ui.input(|i| {
+    // Pointer state read once per frame. We track both buttons so the
+    // drag-clear gesture works with either left or right press starting on
+    // an already-active step.
+    let (
+        primary_down,
+        primary_released,
+        secondary_down,
+        secondary_pressed,
+        secondary_released,
+        pointer_pos,
+    ) = ui.input(|i| {
         (
             i.pointer.primary_down(),
             i.pointer.primary_released(),
+            i.pointer.button_down(egui::PointerButton::Secondary),
+            i.pointer.button_pressed(egui::PointerButton::Secondary),
+            i.pointer.button_released(egui::PointerButton::Secondary),
             i.pointer.interact_pos(),
-            i.modifiers.shift,
         )
     });
-    // Release always ends an active paint drag, regardless of where the
-    // release happened.
-    if primary_released || !primary_down {
+    let any_button_down = primary_down || secondary_down;
+    let any_release = primary_released || secondary_released;
+    // Release: apply the 3-state cycle for a single click on an active
+    // step, then clear paint state. Drag (last_painted moved away from
+    // origin) suppresses the cycle so a cross-row erase doesn't also flip
+    // the start cell's accent on the way out.
+    if any_release || !any_button_down {
+        if let Some((origin, was_on, had_accent)) = ui_state.click_origin.take() {
+            let dragged_far = ui_state.last_painted != Some(origin);
+            if !dragged_far && was_on {
+                if !had_accent {
+                    // active(no accent) → active+accent
+                    seq.toggle_accent(origin);
+                } else {
+                    // active+accent → empty (set_step also clears accent)
+                    seq.set_step(origin, false);
+                }
+            }
+            // was_on=false case: snap-on already happened at press time.
+        }
         ui_state.paint_mode = None;
         ui_state.last_painted = None;
     }
@@ -2068,31 +2269,91 @@ pub fn draw_sequencer_row(
         let id = egui::Id::new(("seq_step", i));
         let resp = ui.interact(rect, id, egui::Sense::click_and_drag());
 
-        // Shift-click on a lit step toggles its accent without changing
-        // step state or starting a paint drag. The 909 hardware behavior
-        // is that accent is per-step velocity, so the toggle has no
-        // meaning for an off step — `Sequencer::toggle_accent` short-
-        // circuits in that case but we also bail early here so we don't
-        // suppress the paint path on shift+empty-pad clicks.
-        if shift_down && resp.clicked() && seq.is_step_on(i) {
-            seq.toggle_accent(i);
-        } else if resp.drag_started() || resp.clicked() {
-            // Initial press on this pad: determine the paint mode from
-            // the current state (off → draw on, on → erase) and apply it.
-            let mode = !seq.is_step_on(i);
-            ui_state.paint_mode = Some(mode);
+        // Press handling. Two paths:
+        //  - Primary press on an empty step: snap on immediately (matches
+        //    real-hardware tactile feedback) and arm paint-on for drag.
+        //  - Primary press on an active step: arm paint-clear for drag,
+        //    but DON'T mutate state yet — the release decides between
+        //    "single click cycle" (advance accent state) and "drag clear".
+        //  - Secondary (right) press on any step: always paint-clear,
+        //    snap-clear on the origin, never cycle.
+        let primary_press = resp.drag_started() || resp.clicked();
+        let secondary_press = resp.contains_pointer() && secondary_pressed;
+        if primary_press {
+            let was_on = seq.is_step_on(i);
+            let had_accent = was_on && seq.is_step_accented(i);
+            if was_on {
+                ui_state.paint_mode = Some(false);
+                ui_state.last_painted = Some(i);
+                ui_state.click_origin = Some((i, true, had_accent));
+            } else {
+                ui_state.paint_mode = Some(true);
+                ui_state.last_painted = Some(i);
+                ui_state.click_origin = Some((i, false, false));
+                seq.set_step(i, true);
+            }
+        } else if secondary_press {
+            ui_state.paint_mode = Some(false);
             ui_state.last_painted = Some(i);
-            seq.set_step(i, mode);
+            ui_state.click_origin = None;
+            if seq.is_step_on(i) {
+                seq.set_step(i, false);
+            }
         }
-
 
         let on = seq.is_step_on(i);
         let accented = on && seq.is_step_accented(i);
         let is_playhead = seq.is_running_effective() && i == current;
         let beat_marker = i % 4 == 0;
 
+        // Momentary press animation — 60 ms travel matches the chrome
+        // buttons up top. Reads the live `is_pointer_button_down_on` flag
+        // (not the latched on/off state, which stays in the red body).
+        let pressed_now = resp.is_pointer_button_down_on();
+        let press = ui.ctx().animate_bool_with_time(
+            egui::Id::new(("seq_step_anim", i)),
+            pressed_now,
+            0.06,
+        );
+        let press_offset = egui::vec2(0.0, press * crate::ui::widgets::BTN_PRESS_TRAVEL);
+
         let painter = ui.painter();
-        // Bevel / body
+
+        // Recessed well — chassis cutout the pad sits in. Painted before
+        // the cap so the 1.5-px gap shows on all sides regardless of
+        // on/off state.
+        let well_rect = rect.expand(1.5);
+        painter.rect_filled(well_rect, 3.0, theme::BTN_WELL);
+        painter.line_segment(
+            [
+                egui::pos2(well_rect.left() + 1.0, well_rect.top() + 0.5),
+                egui::pos2(well_rect.right() - 1.0, well_rect.top() + 0.5),
+            ],
+            egui::Stroke::new(0.6, theme::BTN_WELL_TOP_SHADOW),
+        );
+        painter.line_segment(
+            [
+                egui::pos2(well_rect.left() + 0.5, well_rect.top() + 1.0),
+                egui::pos2(well_rect.left() + 0.5, well_rect.bottom() - 1.0),
+            ],
+            egui::Stroke::new(0.5, theme::BTN_WELL_TOP_SHADOW),
+        );
+
+        // Drop shadow under the cap — fades as the cap sinks.
+        let shadow_alpha = ((1.0 - press) * 0x60 as f32) as u8;
+        if shadow_alpha > 0 {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(rect.left() + 0.5, rect.bottom() - 0.5),
+                    egui::pos2(rect.right() + 1.0, rect.bottom() + 1.5),
+                ),
+                2.0,
+                egui::Color32::from_rgba_premultiplied(0, 0, 0, shadow_alpha),
+            );
+        }
+
+        // Cap body — translated downward by the press amount.
+        let cap_rect = rect.translate(press_offset);
         let body_color = if on {
             theme::RED_WAVEFORM
         } else if beat_marker {
@@ -2100,10 +2361,10 @@ pub fn draw_sequencer_row(
         } else {
             egui::Color32::from_rgb(0x1a, 0x1a, 0x1a)
         };
-        painter.rect_filled(rect, 2.0, body_color);
+        painter.rect_filled(cap_rect, 2.0, body_color);
         // Highlight stripe on top-half for a subtle bevel
         painter.rect_filled(
-            egui::Rect::from_min_size(rect.min, egui::vec2(pad_w, pad_h * 0.45)),
+            egui::Rect::from_min_size(cap_rect.min, egui::vec2(pad_w, pad_h * 0.45)),
             2.0,
             if on {
                 theme::RED_GHOST
@@ -2111,8 +2372,31 @@ pub fn draw_sequencer_row(
                 egui::Color32::from_rgb(0x2a, 0x2a, 0x2a)
             },
         );
+        // Tactile 1-px top sheen + 1-px bottom ledge. Top sheen alpha
+        // tracks `1 - press` so the cap reads as no-longer-catching-light
+        // when fully pressed.
+        let sheen_alpha = ((1.0 - press) * 0x28 as f32) as u8;
+        if sheen_alpha > 0 {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(cap_rect.left() + 1.5, cap_rect.top() + 0.5),
+                    egui::pos2(cap_rect.right() - 1.5, cap_rect.top() + 1.5),
+                ),
+                1.0,
+                egui::Color32::from_rgba_premultiplied(0xff, 0xff, 0xff, sheen_alpha),
+            );
+        }
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(cap_rect.left() + 1.5, cap_rect.bottom() - 1.5),
+                egui::pos2(cap_rect.right() - 1.5, cap_rect.bottom() - 0.5),
+            ),
+            1.0,
+            egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0x60),
+        );
 
-        // Playhead ring
+        // Playhead ring — anchored to the well, not the cap, so it stays
+        // put while the cap depresses underneath it.
         if is_playhead {
             painter.rect_stroke(
                 rect.expand(1.0),
@@ -2122,24 +2406,23 @@ pub fn draw_sequencer_row(
             );
         }
 
-        // Accent indicator — small bright tick at the bottom of the pad.
-        // Sits inside the rect (not as an outer stroke) so it doesn't
-        // clash with the playhead ring above. Visually unambiguous against
-        // the red body.
+        // Accent indicator — small bright tick at the bottom of the cap;
+        // rides the cap so it visibly ducks when the pad is clicked.
         if accented {
             let tick_h = 3.0;
             let tick_inset = 4.0;
             let tick_rect = egui::Rect::from_min_max(
-                egui::pos2(rect.left() + tick_inset, rect.bottom() - tick_h - 1.0),
-                egui::pos2(rect.right() - tick_inset, rect.bottom() - 1.0),
+                egui::pos2(cap_rect.left() + tick_inset, cap_rect.bottom() - tick_h - 1.0),
+                egui::pos2(cap_rect.right() - tick_inset, cap_rect.bottom() - 1.0),
             );
             painter.rect_filled(tick_rect, 1.0, theme::WHITE);
         }
 
-        // Beat number (1, 5, 9, 13) in dim text for orientation
+        // Beat number (1, 5, 9, 13) in dim text for orientation; rides
+        // the cap with everything else.
         if beat_marker {
             painter.text(
-                egui::pos2(rect.left() + 3.0, rect.top() + 2.0),
+                egui::pos2(cap_rect.left() + 3.0, cap_rect.top() + 2.0),
                 egui::Align2::LEFT_TOP,
                 format!("{}", i + 1),
                 egui::FontId::new(7.0, egui::FontFamily::Monospace),
@@ -2158,9 +2441,7 @@ pub fn draw_sequencer_row(
     // pointer is currently over. Without this pass, a quick mouse swipe
     // across the row skips any pads the pointer wasn't literally over on
     // a rendered frame.
-    if let (Some(mode), true, Some(hover_idx)) =
-        (ui_state.paint_mode, primary_down, hovered_step)
-    {
+    if let (Some(mode), true, Some(hover_idx)) = (ui_state.paint_mode, any_button_down, hovered_step) {
         let from = ui_state.last_painted.unwrap_or(hover_idx);
         let (lo, hi) = if from <= hover_idx {
             (from, hover_idx)

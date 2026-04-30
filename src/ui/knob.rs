@@ -97,7 +97,12 @@ fn knob_inner(
         reset: false,
     };
 
-    let box_pad = if compact { 4.0 } else { 12.0 };
+    // Compact knobs need 8 px of padding (was 4) so the new tick-dot zone
+    // at `radius + 2.5` stays inside `painter_at(rect)`'s clip rect for
+    // the 18 px small knobs (rect = diameter+8 = 26 → centre-to-edge 13,
+    // dots at radius+2.5 = 11.5 → safe). column_w stays >= 30 so labels
+    // still don't wrap.
+    let box_pad = if compact { 8.0 } else { 12.0 };
     let label_gap = if compact { 0.0 } else { 3.0 };
     let total = diameter + box_pad;
     // Compact mode keeps the knob box visually tight (≈ diameter + 4) but
@@ -140,7 +145,9 @@ fn knob_inner(
         let ctrl_click = response.clicked() && ui.input(|i| i.modifiers.ctrl);
         let is_double = if response.clicked() {
             let now: f64 = ui.input(|i| i.time);
-            let last: f64 = ui.ctx().data(|d| d.get_temp(id).unwrap_or(f64::NEG_INFINITY));
+            let last: f64 = ui
+                .ctx()
+                .data(|d| d.get_temp(id).unwrap_or(f64::NEG_INFINITY));
             ui.ctx().data_mut(|d| d.insert_temp(id, now));
             (now - last) < 0.35
         } else {
@@ -192,53 +199,145 @@ fn knob_inner(
             let core_radius = radius * 0.6;
             painter.circle_filled(center, core_radius + 1.5, theme::KNOB_BEVEL);
 
-            // 4. Metal core face — colored per section. Specular highlight
-            // stays neutral so the knob reads as anodized metal rather than
-            // painted plastic.
-            let core_inner = egui::Color32::from_rgb(
-                (core_color.r() as f32 * 0.72) as u8,
-                (core_color.g() as f32 * 0.72) as u8,
-                (core_color.b() as f32 * 0.72) as u8,
+            // 4. Flat plastic core. When the Cycles-baked `knob_cap.png`
+            // texture is loaded, blit it tinted by `core_color` —
+            // egui's painter.image multiplies the texture by the tint so
+            // a single neutral-white-plastic bake renders as any section
+            // colour with photoreal studio lighting. Falls through to a
+            // solid base when the bake didn't load.
+            //
+            // The cap is blitted at `core_radius - 1.0` (slightly inside
+            // the bevel ring) so the grey ring covers the bake's
+            // anti-aliased boundary. Two wins from the inset:
+            //   (a) the core reads as *recessed under* the bevel (the
+            //       grey ring sits proud of the colored disk), and
+            //   (b) the AA edge of the bake is hidden by the solid bevel,
+            //       killing the pixelation/aliasing that showed when the
+            //       bake's alpha falloff competed with the bevel circle.
+            let visible_core_r = (core_radius - 1.0).max(core_radius * 0.85);
+            let cap_handle = if crate::ui::widgets::KNOB_CAP_BAKED
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                crate::ui::widgets::knob_cap_handle(ui.ctx())
+            } else {
+                None
+            };
+            if let Some(handle) = cap_handle {
+                // The bake's visible disk is `cap.radius_px=110` in a
+                // 256-wide canvas → fills 110/128 = 0.859 of the half.
+                // Scale dest rect so the disk maps to visible_core_r.
+                let cap_scale = 128.0 / 110.0;
+                let cap_w = visible_core_r * 2.0 * cap_scale;
+                let cap_rect = egui::Rect::from_center_size(
+                    center,
+                    egui::vec2(cap_w, cap_w),
+                );
+                painter.image(
+                    handle.id(),
+                    cap_rect,
+                    egui::Rect::from_min_max(
+                        egui::pos2(0.0, 0.0),
+                        egui::pos2(1.0, 1.0),
+                    ),
+                    core_color,
+                );
+            } else {
+                painter.circle_filled(center, visible_core_r, core_color);
+            }
+            // Subtle inner shadow at the core's outer edge — sells the
+            // "recessed under the rim" depth without darkening the cap
+            // surface itself. Stroke width 1.0 centered at visible
+            // core_r darkens just the outer 0.5 px of the cap.
+            painter.circle_stroke(
+                center,
+                visible_core_r,
+                egui::Stroke::new(
+                    1.0,
+                    egui::Color32::from_rgba_premultiplied(0, 0, 0, 0x40),
+                ),
             );
-            painter.circle_filled(center, core_radius, core_color);
-            painter.circle_filled(
-                center - egui::vec2(core_radius * 0.15, core_radius * 0.15),
-                core_radius * 0.7,
-                theme::KNOB_METAL_HIGHLIGHT,
-            );
-            painter.circle_filled(center, core_radius * 0.5, core_inner);
 
-            // 5. Centre dimple
-            painter.circle_filled(center, core_radius * 0.12, theme::KNOB_DIMPLE);
-
-            // 6. Tapered indicator line
+            // 6. Indicator stem + tick dots. The stem reads as a small
+            // piece of inlaid white plastic sitting in the rubber rim,
+            // cut to fit perfectly between the colored core and the
+            // outer edge of the rubber sleeve.
+            //
+            //   Inner short side: concave arc on the visible core's
+            //     outer circumference (radius=`visible_core_r`).
+            //   Outer short side: arc on the rubber sleeve's outer
+            //     circumference (radius=`radius`) — flush with the rim,
+            //     not reaching out into the tick-dot zone.
+            //
+            // Tick dots stay where they are (`radius + 2.5`); the stem
+            // and the dots are independent paint elements separated by
+            // a small gap of chassis background, just like a real knob
+            // where the pointer is on the rubber sleeve and the tick
+            // marks are painted on the panel beside it.
             let start_angle = std::f32::consts::PI * 0.75;
             let sweep_range = std::f32::consts::PI * 1.5;
-            let angle = start_angle + sweep_range * norm;
-            let ind_inner = core_radius * 0.2;
-            let ind_outer = core_radius * 0.85;
-            let p_inner = center + egui::vec2(angle.cos(), angle.sin()) * ind_inner;
-            let p_outer = center + egui::vec2(angle.cos(), angle.sin()) * ind_outer;
-            painter.line_segment(
-                [p_inner, p_outer],
-                egui::Stroke::new(2.0, theme::KNOB_INDICATOR),
-            );
+            let dot_center_r = radius + 2.5;
+            let dot_radius = 0.75;
+            let indicator_outer_r = radius;
+            let stem_w = 2.0;
+            let half_w = stem_w * 0.5;
 
-            // 7. Tick marks around outer edge
+            // Stem at the current value's angle.
+            let angle = start_angle + sweep_range * norm;
+            let dir = egui::vec2(angle.cos(), angle.sin());
+            let perp = egui::vec2(-dir.y, dir.x);
+
+            // Inner concave arc — the stem's inner short side sits at
+            // exactly `visible_core_r` (the *visible* outer edge of the
+            // colored core, after the recessed-under-bevel inset),
+            // sweeping the angle subtended by the stem's width. Each arc
+            // point is on the core's outer circumference, so the stem's
+            // inner edge *is* part of the core's outer curve — perfect
+            // inlay fit.
+            let stem_angle = dir.y.atan2(dir.x);
+            let inner_half_arc = (half_w / visible_core_r).asin();
+            let outer_half_arc = (half_w / indicator_outer_r).asin();
+            let n_arc = 4;
+
+            let mut points: Vec<egui::Pos2> = Vec::with_capacity(2 * n_arc + 4);
+
+            // Outer short side: arc at `indicator_outer_r = radius` —
+            // the rubber sleeve's outer circumference. The stem's outer
+            // edge sits flush with the rim, curving along the same arc
+            // as the sleeve's outer perimeter.
+            for i in 0..=n_arc {
+                let t = i as f32 / n_arc as f32;
+                let a = stem_angle + outer_half_arc - 2.0 * outer_half_arc * t;
+                points.push(center + egui::vec2(a.cos(), a.sin()) * indicator_outer_r);
+            }
+            // Inner short side: concave arc on the visible core's outer
+            // edge, swept the OTHER way (top → bot) so the polygon walks
+            // CCW around the stem.
+            for i in 0..=n_arc {
+                let t = i as f32 / n_arc as f32;
+                let a = stem_angle - inner_half_arc + 2.0 * inner_half_arc * t;
+                points.push(center + egui::vec2(a.cos(), a.sin()) * visible_core_r);
+            }
+            let _ = perp; // perp computed for clarity; arcs use angles directly
+
+            painter.add(egui::epaint::PathShape {
+                points,
+                closed: true,
+                fill: theme::KNOB_INDICATOR,
+                stroke: egui::epaint::PathStroke::NONE,
+            });
+
+            // Tick dots — uniform round white markers. When the indicator
+            // angle matches a tick angle, indicator's tip kisses the
+            // dot's inner edge.
             for i in 0..=10 {
                 let tick_angle = start_angle + sweep_range * (i as f32 / 10.0);
-                let is_major = i % 5 == 0;
-                let inner_r = radius + 2.0;
-                let outer_r = radius + if is_major { 5.0 } else { 3.5 };
-                let p1 = center + egui::vec2(tick_angle.cos(), tick_angle.sin()) * inner_r;
-                let p2 = center + egui::vec2(tick_angle.cos(), tick_angle.sin()) * outer_r;
-                let color = if is_major {
-                    theme::TICK_MAJOR
-                } else {
-                    theme::TICK_MINOR
-                };
-                let width = if is_major { 1.0 } else { 0.5 };
-                painter.line_segment([p1, p2], egui::Stroke::new(width, color));
+                let tdir = egui::vec2(tick_angle.cos(), tick_angle.sin());
+                let dot_center = center + tdir * dot_center_r;
+                painter.circle_filled(
+                    dot_center,
+                    dot_radius,
+                    theme::KNOB_INDICATOR,
+                );
             }
 
             // 8. Write value to display when hovered/dragged

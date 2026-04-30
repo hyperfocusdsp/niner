@@ -346,7 +346,11 @@ mod tests {
         for _ in 0..2048 {
             mb.process_sample(0.9, 0.9, -12.0, 4.0, 0.0, 0.0, false);
         }
-        assert!(mb.last_gr_db() > 0.5, "expected GR, got {}", mb.last_gr_db());
+        assert!(
+            mb.last_gr_db() > 0.5,
+            "expected GR, got {}",
+            mb.last_gr_db()
+        );
     }
 
     #[test]

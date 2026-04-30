@@ -3,6 +3,7 @@
 
 pub mod editor;
 pub mod knob;
+pub mod layout_overrides;
 pub mod panels;
 pub mod preset_bar;
 pub mod randomize;

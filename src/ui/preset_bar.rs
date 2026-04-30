@@ -11,10 +11,13 @@ use nih_plug_egui::egui;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::params::{ParamSnapshot, NinerParams};
+use crate::params::{NinerParams, ParamSnapshot};
 use crate::presets::{PresetEntry, PresetManager};
 use crate::ui::theme;
-use crate::ui::widgets::{draw_inset_display, preset_arrow_btn};
+use crate::ui::widgets::{
+    display_reflection_handle, draw_inset_display, draw_inset_display_no_glass,
+    paint_display_reflection, preset_arrow_btn, DisplayInsets, DISPLAY_BAKED,
+};
 
 // Dropdown geometry constants. Single source of truth — used by both the
 // renderer and the visible-rows helper so scroll math and paint stay in sync.
@@ -148,12 +151,7 @@ impl PresetBar {
     /// last-used preset on launch). Silently no-ops if the name isn't in
     /// the cache.
     pub fn select_by_name(&mut self, name: &str) {
-        if let Some((idx, entry)) = self
-            .cached
-            .iter()
-            .enumerate()
-            .find(|(_, e)| e.name == name)
-        {
+        if let Some((idx, entry)) = self.cached.iter().enumerate().find(|(_, e)| e.name == name) {
             self.state.selected_index = idx;
             self.state.selected_name = entry.name.clone();
         }
@@ -179,10 +177,10 @@ impl PresetBar {
         self.last_open_dd_rect = None;
 
         let display_w = 130.0;
-        let display_h = 16.0;
-        let arrow_size = 16.0;
-        let btn_w = 36.0;
-        let btn_h = 20.0;
+        let display_h = crate::ui::layout_overrides::chrome_height(ui.ctx());
+        let arrow_size = crate::ui::layout_overrides::chrome_sq(ui.ctx());
+        let btn_w = 40.0;
+        let btn_h = display_h;
         let preset_y = header_center_y - display_h * 0.5;
 
         // Divider line
@@ -202,9 +200,13 @@ impl PresetBar {
         let dropdown_open = self.state.dropdown_open;
 
         // --- Left arrow ---
-        let left_rect = egui::Rect::from_min_size(
-            egui::pos2(origin_x, header_center_y - arrow_size * 0.5),
-            egui::vec2(arrow_size, arrow_size),
+        let left_rect = crate::ui::layout_overrides::instrument(
+            ui,
+            "header.preset_arrow_left",
+            egui::Rect::from_min_size(
+                egui::pos2(origin_x, header_center_y - arrow_size * 0.5),
+                egui::vec2(arrow_size, arrow_size),
+            ),
         );
         if !is_editing {
             let left_resp = ui.interact(
@@ -213,13 +215,26 @@ impl PresetBar {
                 egui::Sense::click(),
             );
             {
-                let painter = ui.painter();
                 let color = if left_resp.hovered() {
                     theme::WHITE
                 } else {
                     theme::TEXT_DIM
                 };
-                preset_arrow_btn(painter, left_rect, "\u{25C2}", color);
+                let pressed = left_resp.is_pointer_button_down_on();
+                let press_amount = ui.ctx().animate_bool_with_time(
+                    egui::Id::new("preset_prev_anim"),
+                    pressed,
+                    0.06,
+                );
+                let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 1.5);
+                preset_arrow_btn(
+                    ui.painter(),
+                    left_rect,
+                    "\u{25C2}",
+                    color,
+                    press_amount,
+                    r,
+                );
             }
             if left_resp.clicked() && !self.cached.is_empty() {
                 let idx = if self.state.selected_index == 0 {
@@ -234,13 +249,25 @@ impl PresetBar {
                 crate::presets::save_last_preset_name(&entry.name);
             }
         } else {
-            preset_arrow_btn(ui.painter(), left_rect, "\u{25C2}", theme::TEXT_GHOST);
+            let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 1.5);
+            preset_arrow_btn(
+                ui.painter(),
+                left_rect,
+                "\u{25C2}",
+                theme::TEXT_GHOST,
+                0.0,
+                r,
+            );
         }
 
         // --- LED display ---
-        let led_rect = egui::Rect::from_min_size(
-            egui::pos2(origin_x + arrow_size + 2.0, preset_y),
-            egui::vec2(display_w, display_h),
+        let led_rect = crate::ui::layout_overrides::instrument(
+            ui,
+            "header.preset_display",
+            egui::Rect::from_min_size(
+                egui::pos2(origin_x + arrow_size + 2.0, preset_y),
+                egui::vec2(display_w, display_h),
+            ),
         );
 
         if is_editing {
@@ -248,21 +275,18 @@ impl PresetBar {
         } else {
             self.render_led_display(ui, setter, params, led_rect, display_w, &selected_name);
             if dropdown_open {
-                self.render_dropdown(
-                    ui,
-                    setter,
-                    params,
-                    led_rect,
-                    display_w,
-                    &selected_name,
-                );
+                self.render_dropdown(ui, setter, params, led_rect, display_w, &selected_name);
             }
         }
 
         // --- Right arrow ---
-        let right_rect = egui::Rect::from_min_size(
-            egui::pos2(led_rect.right() + 2.0, header_center_y - arrow_size * 0.5),
-            egui::vec2(arrow_size, arrow_size),
+        let right_rect = crate::ui::layout_overrides::instrument(
+            ui,
+            "header.preset_arrow_right",
+            egui::Rect::from_min_size(
+                egui::pos2(led_rect.right() + 2.0, header_center_y - arrow_size * 0.5),
+                egui::vec2(arrow_size, arrow_size),
+            ),
         );
         if !is_editing {
             let right_resp = ui.interact(
@@ -271,13 +295,26 @@ impl PresetBar {
                 egui::Sense::click(),
             );
             {
-                let painter = ui.painter();
                 let color = if right_resp.hovered() {
                     theme::WHITE
                 } else {
                     theme::TEXT_DIM
                 };
-                preset_arrow_btn(painter, right_rect, "\u{25B8}", color);
+                let pressed = right_resp.is_pointer_button_down_on();
+                let press_amount = ui.ctx().animate_bool_with_time(
+                    egui::Id::new("preset_next_anim"),
+                    pressed,
+                    0.06,
+                );
+                let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 1.5);
+                preset_arrow_btn(
+                    ui.painter(),
+                    right_rect,
+                    "\u{25B8}",
+                    color,
+                    press_amount,
+                    r,
+                );
             }
             if right_resp.clicked() && !self.cached.is_empty() {
                 let idx = if self.state.selected_index >= self.cached.len() - 1 {
@@ -292,26 +329,40 @@ impl PresetBar {
                 crate::presets::save_last_preset_name(&entry.name);
             }
         } else {
-            preset_arrow_btn(ui.painter(), right_rect, "\u{25B8}", theme::TEXT_GHOST);
+            let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 1.5);
+            preset_arrow_btn(
+                ui.painter(),
+                right_rect,
+                "\u{25B8}",
+                theme::TEXT_GHOST,
+                0.0,
+                r,
+            );
         }
 
         // --- SAVE button ---
         let save_x = right_rect.right() + 6.0;
-        let save_rect = egui::Rect::from_min_size(
-            egui::pos2(save_x, header_center_y - btn_h * 0.5),
-            egui::vec2(btn_w, btn_h),
+        let save_rect = crate::ui::layout_overrides::instrument(
+            ui,
+            "header.save_btn",
+            egui::Rect::from_min_size(
+                egui::pos2(save_x, header_center_y - btn_h * 0.5),
+                egui::vec2(btn_w, btn_h),
+            ),
         );
         let save_resp = ui.interact(
             save_rect,
             egui::Id::new("preset_save"),
             egui::Sense::click(),
         );
-        draw_3d_button(
-            ui.painter(),
-            save_rect,
-            "SAVE",
-            save_resp.is_pointer_button_down_on() || is_editing,
+        let save_pressed = save_resp.is_pointer_button_down_on() || is_editing;
+        let save_press_amount = ui.ctx().animate_bool_with_time(
+            egui::Id::new("preset_save_anim"),
+            save_pressed,
+            0.06,
         );
+        let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 2.0);
+        draw_3d_button(ui.painter(), save_rect, "SAVE", save_press_amount, r);
         if save_resp.clicked() {
             if self.state.editing {
                 self.commit_save(preset_manager, params);
@@ -324,9 +375,13 @@ impl PresetBar {
 
         // --- DEL button ---
         let del_x = save_rect.right() + 4.0;
-        let del_rect = egui::Rect::from_min_size(
-            egui::pos2(del_x, header_center_y - btn_h * 0.5),
-            egui::vec2(btn_w, btn_h),
+        let del_rect = crate::ui::layout_overrides::instrument(
+            ui,
+            "header.del_btn",
+            egui::Rect::from_min_size(
+                egui::pos2(del_x, header_center_y - btn_h * 0.5),
+                egui::vec2(btn_w, btn_h),
+            ),
         );
         // Every preset — factory or user — is now deletable. Factory
         // deletions are persisted as a hidden-names list by
@@ -335,12 +390,14 @@ impl PresetBar {
         // entry is cleared (e.g. by saving under that name).
         let can_delete = !self.cached.is_empty();
         let del_resp = ui.interact(del_rect, egui::Id::new("preset_del"), egui::Sense::click());
-        draw_3d_button(
-            ui.painter(),
-            del_rect,
-            "DEL",
-            del_resp.is_pointer_button_down_on() && can_delete,
+        let del_pressed = del_resp.is_pointer_button_down_on() && can_delete;
+        let del_press_amount = ui.ctx().animate_bool_with_time(
+            egui::Id::new("preset_del_anim"),
+            del_pressed,
+            0.06,
         );
+        let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 2.0);
+        draw_3d_button(ui.painter(), del_rect, "DEL", del_press_amount, r);
         if del_resp.clicked() && can_delete {
             let result = preset_manager.lock().delete(&selected_name);
             match result {
@@ -469,14 +526,26 @@ impl PresetBar {
         selected_name: &str,
     ) {
         {
+            let baked = DISPLAY_BAKED.load(std::sync::atomic::Ordering::Relaxed);
             let painter = ui.painter();
-            draw_inset_display(
-                painter,
-                led_rect.left(),
-                led_rect.top(),
-                display_w,
-                led_rect.height(),
-            );
+            if baked {
+                draw_inset_display_no_glass(
+                    painter,
+                    led_rect.left(),
+                    led_rect.top(),
+                    display_w,
+                    led_rect.height(),
+                    DisplayInsets::DEFAULT,
+                );
+            } else {
+                draw_inset_display(
+                    painter,
+                    led_rect.left(),
+                    led_rect.top(),
+                    display_w,
+                    led_rect.height(),
+                );
+            }
             painter.text(
                 egui::pos2(led_rect.center().x, led_rect.center().y),
                 egui::Align2::CENTER_CENTER,
@@ -484,6 +553,17 @@ impl PresetBar {
                 egui::FontId::new(11.0, egui::FontFamily::Name(theme::FONT_DIGITAL.into())),
                 theme::RED_LED,
             );
+            if baked {
+                if let Some(handle) = display_reflection_handle(ui.ctx()) {
+                    let lit = DisplayInsets::DEFAULT.lit_rect(
+                        led_rect.left(),
+                        led_rect.top(),
+                        display_w,
+                        led_rect.height(),
+                    );
+                    paint_display_reflection(painter, lit, &handle);
+                }
+            }
         }
         let led_resp = ui.interact(led_rect, egui::Id::new("preset_led"), egui::Sense::click());
         if led_resp.clicked() {
@@ -688,11 +768,7 @@ impl PresetBar {
         self.last_open_dd_rect = Some(dd_rect);
     }
 
-    fn commit_save(
-        &mut self,
-        preset_manager: &Arc<Mutex<PresetManager>>,
-        params: &NinerParams,
-    ) {
+    fn commit_save(&mut self, preset_manager: &Arc<Mutex<PresetManager>>, params: &NinerParams) {
         let name = self.state.edit_buffer.trim().to_owned();
         if !name.is_empty() {
             let snapshot = ParamSnapshot::capture(params);
@@ -715,25 +791,17 @@ impl PresetBar {
     }
 }
 
-fn draw_3d_button(painter: &egui::Painter, rect: egui::Rect, label: &str, pressed: bool) {
-    let top_color = if pressed {
-        theme::BTN_DARK
-    } else {
-        theme::BTN_LIGHT
-    };
-    let bot_color = if pressed {
-        theme::BTN_LIGHT
-    } else {
-        theme::BTN_DARK
-    };
-    painter.rect_filled(rect, 2.0, bot_color);
-    painter.rect_filled(
-        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), rect.height() * 0.45)),
-        2.0,
-        top_color,
-    );
+fn draw_3d_button(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    label: &str,
+    press_amount: f32,
+    rounding: f32,
+) {
+    crate::ui::widgets::draw_button_3d(painter, rect, press_amount, rounding);
+    let text_offset = press_amount.clamp(0.0, 1.0) * crate::ui::widgets::BTN_PRESS_TRAVEL;
     painter.text(
-        rect.center(),
+        rect.center() + egui::vec2(0.0, text_offset),
         egui::Align2::CENTER_CENTER,
         label,
         egui::FontId::new(10.0, egui::FontFamily::Monospace),

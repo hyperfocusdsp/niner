@@ -99,10 +99,7 @@ pub fn migrate_legacy_data_dir() {
                 let _ = std::fs::create_dir_all(parent);
             }
             match std::fs::rename(&old_dir, &new_dir) {
-                Ok(_) => tracing::info!(
-                    "migrated legacy slammer data dir → {}",
-                    new_dir.display()
-                ),
+                Ok(_) => tracing::info!("migrated legacy slammer data dir → {}", new_dir.display()),
                 Err(e) => tracing::warn!("legacy data dir migration failed: {e}"),
             }
         }

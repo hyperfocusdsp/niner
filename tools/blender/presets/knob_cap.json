@@ -1,0 +1,42 @@
+{
+  "_comment": "Knob cap bake — single neutral white plastic dome rendered under the same studio rig as chassis.json. Runtime tints per-knob with `core_color` via painter.image()'s color multiply, so this one bake serves every section colour (yellow/red/green/blue/grey/master).",
+
+  "canvas": {
+    "_comment": "Render at 256² native; runtime scales down to the actual core_radius (typically 9–11 px). Higher native gives clean specular falloff at any GUI scale (1×/1.5×/2×).",
+    "width": 256,
+    "height": 256
+  },
+
+  "cap": {
+    "_comment": "A slightly convex disk: flat top with rounded bevel at the rim. Higher height + bigger bevel gives the dome more curvature → more obvious key-light gradient and a real rim highlight from the upper-right rim light.",
+    "radius_px": 110.0,
+    "height_px": 14.0,
+    "rim_bevel_px": 12.0,
+    "rim_bevel_segments": 12
+  },
+
+  "material": {
+    "_comment": "Bright neutral base so runtime tints multiply *down* without losing highlight detail. Egui painter.image() multiplies texture × tint_color, so a bake with peak whites at ~240/255 lets a tint like (212,149,38) reach near-saturation in lit areas. Slightly lower roughness (0.42) so the key light produces a visible specular sheen on the dome — still matte plastic, not glossy.",
+    "base_color_linear": [0.92, 0.92, 0.92],
+    "metallic": 0.04,
+    "roughness": 0.42,
+    "coat_weight": 0.0,
+    "coat_roughness": 0.0
+  },
+
+  "lights": {
+    "_comment": "Same key/fill/rim directions as chassis.json so the cap reads as lit by the identical studio rig. Energies pushed harder so the dome curvature reads — peak white at upper-left ≈ 250/255, bottom-right shadow ≈ 110/255, top-right rim a thin bright band.",
+    "key":  {"position": [-200.0, 180.0, 320.0], "size_w": 240.0, "size_h": 180.0, "energy": 1500000.0, "color": [1.0, 0.96, 0.88]},
+    "fill": {"position": [ 180.0,-160.0, 220.0], "size_w": 320.0, "size_h": 200.0, "energy":  180000.0, "color": [0.88, 0.92, 1.0]},
+    "rim":  {"position": [ 160.0, 120.0,-140.0], "size_w":  60.0, "size_h": 240.0, "energy":  450000.0, "color": [1.0, 1.0, 1.0]}
+  },
+
+  "render": {
+    "_comment": "scale=4 → 1024×1024 native. The visible knob in-GUI is ~32 px diameter at 1× UI / ~64 px at 2× UI; baking at 1024 gives ≥16× supersampling so the dome's lighting falloff stays smooth at any GUI scale (1×/1.5×/2×) with linear-filter texture sampling.",
+    "engine": "CYCLES",
+    "scale": 4,
+    "samples": 256,
+    "denoise": true,
+    "view_transform": "Standard"
+  }
+}

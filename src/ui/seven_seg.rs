@@ -18,7 +18,10 @@ use nih_plug::prelude::*;
 use nih_plug_egui::egui;
 
 use crate::ui::theme;
-use crate::ui::widgets::draw_inset_display;
+use crate::ui::widgets::{
+    display_reflection_handle, draw_inset_display, draw_inset_display_no_glass,
+    paint_display_reflection, DisplayInsets, DISPLAY_BAKED,
+};
 
 /// Return the bitmask describing which segments should light up for `ch`.
 fn seg_mask(ch: char) -> u8 {
@@ -180,24 +183,37 @@ pub fn lcd_selector(
 ) {
     let current = param.value() as usize;
 
+    // All chrome heights (arrow buttons + LCD body) collapse to CHROME_H so
+    // SAT-row LCDs read as the same hardware family as the header chrome.
+    // Compact / non-compact mode now only differs in the LCD width
+    // (44 vs 56) so SAT MODE still reads as wider than per-row selectors,
+    // and in the trailing pad on the non-compact path.
+    let arrow_sq = crate::ui::layout_overrides::chrome_sq(ui.ctx());
+    let chrome_h = crate::ui::layout_overrides::chrome_height(ui.ctx());
     let (btn_w, btn_h, lcd_width, lcd_height, trailing_pad) = if compact {
-        (14.0, 18.0, 44.0, 16.0, 0.0)
+        (arrow_sq, chrome_h, 44.0, chrome_h, 0.0)
     } else {
-        (18.0, 26.0, 56.0, 22.0, 8.0)
+        (arrow_sq, chrome_h, 56.0, chrome_h, 8.0)
     };
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
 
         let (_, left_rect) = ui.allocate_space(egui::vec2(btn_w, btn_h));
-        if ui.is_rect_visible(left_rect) {
-            draw_lcd_arrow(ui.painter(), left_rect, "\u{25C0}");
-        }
         let left_resp = ui.interact(
             left_rect,
             egui::Id::new((id_source, "left")),
             egui::Sense::click(),
         );
+        if ui.is_rect_visible(left_rect) {
+            let press_amount = ui.ctx().animate_bool_with_time(
+                egui::Id::new((id_source, "left", "anim")),
+                left_resp.is_pointer_button_down_on(),
+                0.06,
+            );
+            let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 2.0);
+            draw_lcd_arrow(ui.painter(), left_rect, "\u{25C0}", press_amount, r);
+        }
         if left_resp.clicked() && !modes.is_empty() {
             let next = if current == 0 {
                 modes.len() - 1
@@ -211,29 +227,62 @@ pub fn lcd_selector(
 
         let (_, lcd_rect) = ui.allocate_space(egui::vec2(lcd_width, lcd_height));
         if ui.is_rect_visible(lcd_rect) {
+            let baked = DISPLAY_BAKED.load(std::sync::atomic::Ordering::Relaxed);
             let painter = ui.painter();
-            draw_inset_display(
-                painter,
-                lcd_rect.left(),
-                lcd_rect.top(),
-                lcd_width,
-                lcd_height,
-            );
+            if baked {
+                draw_inset_display_no_glass(
+                    painter,
+                    lcd_rect.left(),
+                    lcd_rect.top(),
+                    lcd_width,
+                    lcd_height,
+                    DisplayInsets::DEFAULT,
+                );
+            } else {
+                draw_inset_display(
+                    painter,
+                    lcd_rect.left(),
+                    lcd_rect.top(),
+                    lcd_width,
+                    lcd_height,
+                );
+            }
             let mode_name = modes.get(current).copied().unwrap_or("");
             draw_7seg_text(painter, lcd_rect, mode_name);
+            if baked {
+                if let Some(handle) = display_reflection_handle(ui.ctx()) {
+                    let lit = DisplayInsets::DEFAULT.lit_rect(
+                        lcd_rect.left(),
+                        lcd_rect.top(),
+                        lcd_width,
+                        lcd_height,
+                    );
+                    paint_display_reflection(painter, lit, &handle);
+                }
+            }
         }
 
         let (_, right_rect) = ui.allocate_space(egui::vec2(btn_w, btn_h));
-        if ui.is_rect_visible(right_rect) {
-            draw_lcd_arrow(ui.painter(), right_rect, "\u{25B6}");
-        }
         let right_resp = ui.interact(
             right_rect,
             egui::Id::new((id_source, "right")),
             egui::Sense::click(),
         );
+        if ui.is_rect_visible(right_rect) {
+            let press_amount = ui.ctx().animate_bool_with_time(
+                egui::Id::new((id_source, "right", "anim")),
+                right_resp.is_pointer_button_down_on(),
+                0.06,
+            );
+            let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 2.0);
+            draw_lcd_arrow(ui.painter(), right_rect, "\u{25B6}", press_amount, r);
+        }
         if right_resp.clicked() && !modes.is_empty() {
-            let next = if current + 1 >= modes.len() { 0 } else { current + 1 };
+            let next = if current + 1 >= modes.len() {
+                0
+            } else {
+                current + 1
+            };
             setter.begin_set_parameter(param);
             setter.set_parameter(param, next as f32);
             setter.end_set_parameter(param);
@@ -245,18 +294,20 @@ pub fn lcd_selector(
     });
 }
 
-fn draw_lcd_arrow(painter: &egui::Painter, rect: egui::Rect, glyph: &str) {
-    painter.rect_filled(rect, 3.0, theme::BTN_DARK);
-    painter.rect_filled(
-        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), rect.height() * 0.4)),
-        3.0,
-        theme::BTN_LIGHT,
-    );
+fn draw_lcd_arrow(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    glyph: &str,
+    press_amount: f32,
+    rounding: f32,
+) {
+    crate::ui::widgets::draw_button_3d(painter, rect, press_amount, rounding);
+    let text_offset = press_amount.clamp(0.0, 1.0) * crate::ui::widgets::BTN_PRESS_TRAVEL;
     painter.text(
-        rect.center(),
+        rect.center() + egui::vec2(0.0, text_offset),
         egui::Align2::CENTER_CENTER,
         glyph,
-        egui::FontId::new(9.0, egui::FontFamily::Monospace),
+        egui::FontId::new(11.0, egui::FontFamily::Monospace),
         theme::BTN_TEXT,
     );
 }

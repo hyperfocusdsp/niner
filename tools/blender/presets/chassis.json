@@ -16,6 +16,8 @@
   },
 
   "screws": {
+    "_comment": "enabled=true bakes screws into chassis.png. Set false (or pass --only-screws) to render screws as a transparent overlay (assets/screws.png) composited at runtime.",
+    "enabled": true,
     "radius": 5.0,
     "positions": [
       [8.0, 18.0],

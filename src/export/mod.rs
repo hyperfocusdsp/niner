@@ -309,5 +309,4 @@ mod tests {
         // at least be absolute and non-empty.
         assert!(d.is_absolute(), "{:?}", d);
     }
-
 }

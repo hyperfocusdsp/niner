@@ -2,7 +2,11 @@ use std::f32::consts::PI;
 
 #[inline]
 fn flush_denormal(x: f32) -> f32 {
-    if x.is_subnormal() { 0.0 } else { x }
+    if x.is_subnormal() {
+        0.0
+    } else {
+        x
+    }
 }
 
 /// Stereo 2-pole SVF DJ filter with bipolar cutoff mapping.
@@ -247,12 +251,7 @@ mod tests {
         let mut f = DjFilter::new();
         f.set_sample_rate(48000.0);
         for i in 0..256 {
-            f.process_sample(
-                (i as f32 * 0.1).sin(),
-                (i as f32 * 0.1).sin(),
-                -0.5,
-                0.5,
-            );
+            f.process_sample((i as f32 * 0.1).sin(), (i as f32 * 0.1).sin(), -0.5, 0.5);
         }
         f.reset();
         let (ol, _) = f.process_sample(0.5, 0.5, 0.0, 0.0);
@@ -266,7 +265,10 @@ mod tests {
         for i in 0..4096 {
             let input = (i as f32 * 0.3).sin();
             let (ol, or) = f.process_sample(input, input, -0.01, 0.0);
-            assert!(ol.is_finite(), "LP near-Nyquist must not blow up (sample {i})");
+            assert!(
+                ol.is_finite(),
+                "LP near-Nyquist must not blow up (sample {i})"
+            );
             assert!(or.is_finite());
         }
     }
@@ -278,7 +280,10 @@ mod tests {
         for i in 0..4096 {
             let input = if i == 0 { 1.0 } else { 0.0 };
             let (ol, or) = f.process_sample(input, input, -0.05, 1.0);
-            assert!(ol.is_finite(), "high-Q near Nyquist must stay finite (sample {i})");
+            assert!(
+                ol.is_finite(),
+                "high-Q near Nyquist must stay finite (sample {i})"
+            );
             assert!(or.is_finite());
         }
     }

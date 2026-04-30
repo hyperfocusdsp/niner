@@ -145,6 +145,24 @@ pub fn create(
     // procedural BG_PANEL fill in panels::draw_chrome when present, falls
     // back to procedural on decode failure.
     let chassis_texture: Arc<Mutex<Option<egui::TextureHandle>>> = Arc::new(Mutex::new(None));
+    // Optional separate screws overlay. When `assets/screws.png` is the
+    // 1×1 transparent placeholder the runtime falls back to either the
+    // screws baked into chassis.png (current production state) or
+    // procedural screws when CHASSIS_BAKED is false. When the user
+    // re-bakes a clean plate (`screws.enabled=false`) and ships a real
+    // screws.png from `--only-screws`, this layer paints on top.
+    let screws_texture: Arc<Mutex<Option<egui::TextureHandle>>> = Arc::new(Mutex::new(None));
+    // Photoreal baked knob cap (Cycles render of a single neutral plastic
+    // dome under the chassis studio rig). Runtime tints with `core_color`
+    // via painter.image color multiply, so one bake serves all section
+    // colours.
+    let knob_cap_texture: Arc<Mutex<Option<egui::TextureHandle>>> = Arc::new(Mutex::new(None));
+    // Cycles-baked display reflection overlay
+    // (`assets/display_reflection.png`). Same lazy-upload pattern as the
+    // chassis bake; replaces the procedural top sheen + 1-px specular line
+    // on the OUTPUT display once `DISPLAY_BAKED` flips true.
+    let display_reflection_texture: Arc<Mutex<Option<egui::TextureHandle>>> =
+        Arc::new(Mutex::new(None));
     let dice_locks = Arc::new(std::sync::atomic::AtomicU8::new(0));
 
     create_egui_editor(
@@ -153,6 +171,10 @@ pub fn create(
         |ctx, _| {
             theme::setup_fonts(ctx);
             theme::setup_style(ctx);
+            // Optional dev-only layout editor — gated on the
+            // `NINER_LAYOUT_EDITOR` env var so production runs are never
+            // affected. F12 toggles the panel after init.
+            crate::ui::layout_overrides::init(ctx);
         },
         move |ctx, setter, _state| {
             // Scaling is handled outside this callback: baseview applies the
@@ -220,11 +242,109 @@ pub fn create(
                         }
                     }
 
+                    // Screws overlay (lazy upload). The 1×1 placeholder
+                    // ships in-tree so include_bytes! compiles; only flip
+                    // SCREWS_BAKED if the loaded image is the real bake.
+                    {
+                        let mut tex = screws_texture.lock();
+                        if tex.is_none() {
+                            let bytes = include_bytes!("../../assets/screws.png");
+                            if let Ok(img) = image::load_from_memory(bytes) {
+                                let rgba = img.to_rgba8();
+                                let (w, h) = rgba.dimensions();
+                                let pixels = rgba.into_raw();
+                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                    [w as usize, h as usize],
+                                    &pixels,
+                                );
+                                *tex = Some(ctx.load_texture(
+                                    "niner_screws",
+                                    color_image,
+                                    egui::TextureOptions::LINEAR,
+                                ));
+                                if w > 1 && h > 1 {
+                                    crate::ui::widgets::SCREWS_BAKED
+                                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                                }
+                            }
+                        }
+                    }
+
+                    // Knob cap (lazy upload). Same pattern — stash a clone
+                    // in ctx.data so knob.rs can pick it up without
+                    // threading a handle through every callsite.
+                    {
+                        let mut tex = knob_cap_texture.lock();
+                        if tex.is_none() {
+                            let bytes = include_bytes!("../../assets/knob_cap.png");
+                            if let Ok(img) = image::load_from_memory(bytes) {
+                                let rgba = img.to_rgba8();
+                                let (w, h) = rgba.dimensions();
+                                let pixels = rgba.into_raw();
+                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                    [w as usize, h as usize],
+                                    &pixels,
+                                );
+                                let handle = ctx.load_texture(
+                                    "niner_knob_cap",
+                                    color_image,
+                                    egui::TextureOptions::LINEAR,
+                                );
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(
+                                        egui::Id::new("niner_knob_cap_handle"),
+                                        handle.clone(),
+                                    );
+                                });
+                                *tex = Some(handle);
+                                crate::ui::widgets::KNOB_CAP_BAKED
+                                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
+                    }
+
+                    // Display reflection (lazy upload — replaces the
+                    // procedural sheen/specular on the OUTPUT display).
+                    {
+                        let mut tex = display_reflection_texture.lock();
+                        if tex.is_none() {
+                            let bytes = include_bytes!("../../assets/display_reflection.png");
+                            if let Ok(img) = image::load_from_memory(bytes) {
+                                let rgba = img.to_rgba8();
+                                let (w, h) = rgba.dimensions();
+                                let pixels = rgba.into_raw();
+                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                    [w as usize, h as usize],
+                                    &pixels,
+                                );
+                                let handle = ctx.load_texture(
+                                    "niner_display_reflection",
+                                    color_image,
+                                    egui::TextureOptions::LINEAR,
+                                );
+                                // Stash a clone in ctx.data so the preset
+                                // bar and 7-seg displays can pick it up
+                                // without threading a new parameter through
+                                // every call site.
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(
+                                        egui::Id::new("niner_display_reflection_handle"),
+                                        handle.clone(),
+                                    );
+                                });
+                                *tex = Some(handle);
+                                crate::ui::widgets::DISPLAY_BAKED
+                                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
+                    }
+
                     // ===== Panel chrome =====
                     let header_center_y = panels::draw_chrome(
                         ui,
                         panel_rect,
                         chassis_texture.lock().as_ref(),
+                        screws_texture.lock().as_ref(),
                     );
 
                     // Header logo (lazy texture upload, then painter::image).
@@ -250,12 +370,24 @@ pub fn create(
                         if let Some(t) = tex.as_ref() {
                             let logo_h = 18.0;
                             let logo_w = logo_h * (480.0 / 84.0);
-                            let logo_rect = egui::Rect::from_min_size(
+                            // The PNG has ~26.25% transparent padding on its
+                            // left side before the actual "NINER" glyphs.
+                            // Shift the rect left so the visible text edge,
+                            // not the PNG edge, lines up with CONTENT_LEFT
+                            // (the same x as the display bezel and the
+                            // SUB / MID / TOP labels below).
+                            let glyph_left_pad = logo_w * (126.0 / 480.0);
+                            let base_logo_rect = egui::Rect::from_min_size(
                                 egui::pos2(
-                                    panel_rect.left() + CONTENT_LEFT,
+                                    panel_rect.left() + CONTENT_LEFT - glyph_left_pad,
                                     header_center_y - logo_h * 0.5,
                                 ),
                                 egui::vec2(logo_w, logo_h),
+                            );
+                            let logo_rect = crate::ui::layout_overrides::instrument(
+                                ui,
+                                "header.niner_logo",
+                                base_logo_rect,
                             );
                             ui.painter().image(
                                 t.id(),
@@ -292,11 +424,7 @@ pub fn create(
                             egui::vec2(badge_w, badge_h),
                         );
                         let resp = ui
-                            .interact(
-                                hit,
-                                egui::Id::new("ui_scale_btn"),
-                                egui::Sense::click(),
-                            )
+                            .interact(hit, egui::Id::new("ui_scale_btn"), egui::Sense::click())
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .on_hover_text(
                                 "UI scale — click to cycle (1× / 1.5× / 2×).\n\
@@ -411,11 +539,22 @@ pub fn create(
                         sequencer.toggle_running();
                     }
 
+                    // F12 toggles the dev-only layout editor (no-op when
+                    // `NINER_LAYOUT_EDITOR` was unset at startup *and* the
+                    // user hasn't already turned it on this session).
+                    crate::ui::layout_overrides::handle_toggle(ctx, typing);
+
+                    // Arrow keys nudge selected elements when the editor
+                    // is on. Runs BEFORE preset_bar / tempo so consumed
+                    // events don't fire prev/next or BPM ±10. No-op when
+                    // selection is empty.
+                    crate::ui::layout_overrides::handle_arrow_nudge(ctx, typing);
+
                     // ===== Header preset bar =====
                     {
                         let mut bar = preset_bar.lock();
                         let dt = ctx.input(|i| i.unstable_dt);
-                        let preset_origin_x = panel_rect.left() + CONTENT_LEFT + 196.0;
+                        let preset_origin_x = panel_rect.left() + CONTENT_LEFT + 167.0;
                         bar.render(
                             ui,
                             setter,
@@ -473,6 +612,7 @@ pub fn create(
                         let wf = waveform.lock();
                         let sd = spectrum_display.lock();
                         let mode = panels::display_mode(ctx);
+                        let display_reflection_lock = display_reflection_texture.lock();
                         let master_row = panels::MasterRow {
                             master_y,
                             wf_left,
@@ -483,8 +623,43 @@ pub fn create(
                             spectrum_peak_hold: &sd.peak_hold,
                             display_mode: mode,
                             gr_db: gr_smoothed,
+                            display_reflection: display_reflection_lock.as_ref(),
                         };
                         master_row.draw(ui, setter, &params, panel_rect);
+                    }
+
+                    // BPM readout — anchored to the lower-left corner of
+                    // the master display's lit area so it reads as part of
+                    // the screen, like a real piece of hardware shows
+                    // tempo on its main LCD. Follows the display when the
+                    // user drags it via the layout editor; can also be
+                    // dragged independently via its own "master.bpm" key.
+                    {
+                        let display_off = crate::ui::layout_overrides::offset_for(
+                            ctx,
+                            "master.output_display",
+                        );
+                        let lit = crate::ui::widgets::lit_rect_default(
+                            wf_left + display_off.x,
+                            master_y + display_off.y,
+                            wf_width,
+                            wf_height,
+                        );
+                        let bpm_pos = crate::ui::layout_overrides::instrument_text(
+                            ui,
+                            "master.bpm",
+                            egui::pos2(lit.left() + 2.0, lit.bottom() - 12.0),
+                            egui::vec2(80.0, 12.0),
+                            egui::Align2::LEFT_TOP,
+                        );
+                        let mut seq_ui = seq_ui_state.lock();
+                        panels::draw_tempo_widget(
+                            ui,
+                            bpm_pos,
+                            &sequencer,
+                            sequencer.is_host_synced(),
+                            &mut seq_ui.tempo_edit,
+                        );
                     }
 
                     // ===== Three knob rows =====
@@ -504,11 +679,8 @@ pub fn create(
                     // height. Mirrors how the CLAP small cluster aligns
                     // against the big MID knobs in the row above.
                     {
-                        let filter_top =
-                            sat_eq_result.eq_knob_y + (panels::KNOB_SIZE - 18.0) * 0.5;
-                        panels::draw_filter_cluster(
-                            ui, setter, &params, panel_rect, filter_top,
-                        );
+                        let filter_top = sat_eq_result.eq_knob_y + (panels::KNOB_SIZE - 18.0) * 0.5;
+                        panels::draw_filter_cluster(ui, setter, &params, panel_rect, filter_top);
                     }
 
                     // ===== DICE + BOUNCE (sequencer right column) =====
@@ -521,18 +693,21 @@ pub fn create(
                         // (knob row + 32 px gap + caption), so its bottom sits
                         // at eq_knob_y + 73. DICE lands 5 px below that.
                         let dice_top = sat_eq_result.eq_knob_y + 78.0;
-                        let dice_clicked = panels::draw_dice_row(
-                            ui, panel_rect, dice_top, &dice_locks,
-                        );
+                        let dice_clicked =
+                            panels::draw_dice_row(ui, panel_rect, dice_top, &dice_locks);
                         if dice_clicked {
                             let locked = dice_locks.load(std::sync::atomic::Ordering::Relaxed);
                             crate::ui::randomize::randomize(setter, &params, locked);
                         }
-                        // BOUNCE sits just above the footer groove (bottom - 22).
-                        let bounce_top = panel_rect.bottom() - 42.0;
-                        let bounce_clicked = panels::draw_bounce_button(
-                            ui, panel_rect, bounce_top,
-                        );
+                        // BOUNCE shares the sequencer row vertically with PLAY +
+                        // the 16 step pads. Mirror the pad_top formula in
+                        // panels::draw_sequencer_row so they stay locked.
+                        let bounce_top = sat_eq_bottom_y + 4.0 + 14.0 + 6.0;
+                        let bounce_row = panels::draw_bounce_button(ui, panel_rect, bounce_top);
+                        let bounce_clicked = bounce_row.bounce_clicked;
+                        if bounce_row.clear_clicked {
+                            sequencer.clear_pattern();
+                        }
 
                         // Drain any completed bounce from the worker thread
                         // first so the next click isn't blocked by a stale
@@ -543,10 +718,9 @@ pub fn create(
                                 match rx.try_recv() {
                                     Ok(outcome) => {
                                         match outcome {
-                                            ExportOutcome::Written(path) => tracing::info!(
-                                                "bounce written: {}",
-                                                path.display()
-                                            ),
+                                            ExportOutcome::Written(path) => {
+                                                tracing::info!("bounce written: {}", path.display())
+                                            }
                                             ExportOutcome::Cancelled => {}
                                             ExportOutcome::UnsupportedExtension(ext) => {
                                                 tracing::warn!(
@@ -579,9 +753,7 @@ pub fn create(
                         if bounce_clicked {
                             let mut slot = bounce_inflight.lock();
                             if slot.is_some() {
-                                tracing::info!(
-                                    "bounce: worker still running, ignoring click"
-                                );
+                                tracing::info!("bounce: worker still running, ignoring click");
                             } else {
                                 let (tx, rx) = mpsc::channel();
                                 let export_state_worker = Arc::clone(&export_state);
@@ -598,10 +770,7 @@ pub fn create(
                                 match spawn_result {
                                     Ok(_handle) => *slot = Some(rx),
                                     Err(e) => {
-                                        tracing::error!(
-                                            "bounce: failed to spawn worker: {}",
-                                            e
-                                        );
+                                        tracing::error!("bounce: failed to spawn worker: {}", e);
                                     }
                                 }
                             }
@@ -632,8 +801,7 @@ pub fn create(
                     {
                         let mut tex = hf_logo_texture.lock();
                         if tex.is_none() {
-                            let bytes =
-                                include_bytes!("../../assets/hyperfocus_dsp_logo.png");
+                            let bytes = include_bytes!("../../assets/hyperfocus_dsp_logo.png");
                             if let Ok(img) = image::load_from_memory(bytes) {
                                 let rgba = img.to_rgba8();
                                 let (w, h) = rgba.dimensions();
@@ -651,18 +819,24 @@ pub fn create(
                         }
                         if let Some(t) = tex.as_ref() {
                             // Source rendered at 142×24 (rsvg-convert -h 24);
-                            // displaying at 10 px tall is a 2.4× downscale
-                            // that LINEAR handles cleanly without aliasing.
-                            let logo_h = 10.0;
+                            // 8 px tall is a 3× downscale that LINEAR handles
+                            // cleanly without aliasing, and fits inside the
+                            // 10-px slot between the footer groove (y=422)
+                            // and the bottom edge band (y=432) without
+                            // crossing either, mirroring how the header
+                            // strip clears the top edge band.
+                            let logo_h = 8.0;
                             let [tex_w, tex_h] = t.size();
                             let logo_w = logo_h * (tex_w as f32 / tex_h as f32);
-                            let strip_y = panel_rect.bottom() - 17.0;
-                            let logo_rect = egui::Rect::from_min_size(
-                                egui::pos2(
-                                    panel_rect.left() + CONTENT_LEFT,
-                                    strip_y,
-                                ),
+                            let strip_y = panel_rect.bottom() - 21.0;
+                            let base_logo_rect = egui::Rect::from_min_size(
+                                egui::pos2(panel_rect.left() + CONTENT_LEFT, strip_y),
                                 egui::vec2(logo_w, logo_h),
+                            );
+                            let logo_rect = crate::ui::layout_overrides::instrument(
+                                ui,
+                                "footer.hyperfocus_logo",
+                                base_logo_rect,
                             );
                             ui.painter().image(
                                 t.id(),
@@ -693,6 +867,10 @@ pub fn create(
                         bar.apply_late_cursor(ui);
                     }
                 });
+
+            // Dev-only layout editor — no-ops when off, otherwise paints
+            // the bulk-adjust window on top of the central panel.
+            crate::ui::layout_overrides::render_panel(ctx);
         },
     )
 }

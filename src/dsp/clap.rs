@@ -12,7 +12,11 @@
 
 #[inline]
 fn flush_denormal(x: f32) -> f32 {
-    if x.is_subnormal() { 0.0 } else { x }
+    if x.is_subnormal() {
+        0.0
+    } else {
+        x
+    }
 }
 
 pub struct ClapVoice {
@@ -123,7 +127,11 @@ impl ClapVoice {
             };
 
             // Bursts ride above the tail.
-            let v = if burst_env > tail_env { burst_env } else { tail_env };
+            let v = if burst_env > tail_env {
+                burst_env
+            } else {
+                tail_env
+            };
             self.env[i] = v;
         }
 

@@ -320,7 +320,10 @@ mod tests {
         let mut sat = Saturation::new(44100.0);
         for &input in &[100.0_f32, -100.0, 1e6, -1e6] {
             let out = sat.process(input, SatMode::Diode, 1.0, 1.0);
-            assert!(out.is_finite(), "diode produced non-finite for {input}: {out}");
+            assert!(
+                out.is_finite(),
+                "diode produced non-finite for {input}: {out}"
+            );
             sat.reset();
         }
     }

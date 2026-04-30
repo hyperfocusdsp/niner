@@ -1,0 +1,37 @@
+{
+  "_comment": "Display glass reflection bake. lit_rect mirrors src/ui/panels.rs (wf_left=30, master_y=42, wf_width=348, wf_height=56). Drift caught by tests/chassis_layout_check.rs.",
+
+  "lit_rect": {
+    "x": 30.0,
+    "y": 42.0,
+    "w": 348.0,
+    "h": 56.0
+  },
+
+  "material": {
+    "_comment": "Principled BSDF: near-black base + low roughness so the only visible thing is the studio-light reflections. Specular tint warms the highlight slightly to match the chassis hammertone bake.",
+    "roughness": 0.18,
+    "specular_tint": [1.0, 0.96, 0.90]
+  },
+
+  "lights": [
+    {
+      "_comment": "Single broad cool fill over the upper portion of the display. The previous warm key (upper-left) was dropped per user feedback — only the right-side cool reflection remains, but extended leftward so it now spans most of the upper half. Target = straight down for axis-aligned horizontal projection.",
+      "name": "DispFill",
+      "position": [40.0, 8.0, 140.0],
+      "size_w": 230.0,
+      "size_h": 30.0,
+      "energy": 26000.0,
+      "color": [0.86, 0.92, 1.0],
+      "target": [40.0, 8.0, 0.0]
+    }
+  ],
+
+  "render": {
+    "engine": "CYCLES",
+    "samples": 256,
+    "denoise": true,
+    "scale": 2,
+    "view_transform": "Standard"
+  }
+}

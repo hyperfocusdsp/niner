@@ -55,10 +55,40 @@ pub const SCREW_LIGHT: egui::Color32 = egui::Color32::from_rgb(0xaa, 0xaa, 0xaa)
 pub const SCREW_DARK: egui::Color32 = egui::Color32::from_rgb(0x2a, 0x2a, 0x2a);
 pub const SCREW_HEX: egui::Color32 = egui::Color32::from_rgb(0x1a, 0x1a, 0x1a);
 
-// Arrow buttons
+// Legacy 2-tone button (still used by sequencer step bodies; the 3D
+// helper below is preferred for any new chrome).
 pub const BTN_LIGHT: egui::Color32 = egui::Color32::from_rgb(0x44, 0x44, 0x44);
 pub const BTN_DARK: egui::Color32 = egui::Color32::from_rgb(0x1c, 0x1c, 0x1c);
 pub const BTN_TEXT: egui::Color32 = egui::Color32::from_rgba_premultiplied(0x50, 0x50, 0x50, 0x73);
+
+// 3D button gradient stops (used by `widgets::draw_button_3d`).
+// A real plastic/rubber cap has a bright spec at the top, midtone body,
+// and deep self-shadow at the base — the gradient interpolates these.
+pub const BTN_HIGHLIGHT_TOP: egui::Color32 = egui::Color32::from_rgb(0x5e, 0x5e, 0x5e);
+pub const BTN_TOP: egui::Color32 = egui::Color32::from_rgb(0x46, 0x46, 0x46);
+pub const BTN_MID: egui::Color32 = egui::Color32::from_rgb(0x2c, 0x2c, 0x2c);
+pub const BTN_BOTTOM: egui::Color32 = egui::Color32::from_rgb(0x16, 0x16, 0x16);
+pub const BTN_BOTTOM_DEEP: egui::Color32 = egui::Color32::from_rgb(0x0a, 0x0a, 0x0a);
+pub const BTN_EDGE: egui::Color32 = egui::Color32::from_rgb(0x28, 0x28, 0x28);
+pub const BTN_TOP_SHEEN: egui::Color32 =
+    egui::Color32::from_rgba_premultiplied(0xff, 0xff, 0xff, 0x44);
+pub const BTN_BOT_LEDGE: egui::Color32 =
+    egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0x88);
+pub const BTN_DROP_SHADOW: egui::Color32 =
+    egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0x70);
+// Recessed-mounting "well" — the chassis cutout the button cap sits in.
+// Rendered as a 1-px ring around each button so the cap reads as a real
+// piece of hardware seated in a panel rather than printed on it. Top-edge
+// shadow is darker (TR-909-style) to suggest the cap is overhanging.
+pub const BTN_WELL: egui::Color32 = egui::Color32::from_rgb(0x05, 0x05, 0x05);
+pub const BTN_WELL_TOP_SHADOW: egui::Color32 =
+    egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0xa0);
+
+// Display reflection (subtle white sheen on lit area top + 1-px specular line)
+pub const DISPLAY_SHEEN: egui::Color32 =
+    egui::Color32::from_rgba_premultiplied(0xff, 0xff, 0xff, 0x12);
+pub const DISPLAY_SPECULAR: egui::Color32 =
+    egui::Color32::from_rgba_premultiplied(0xff, 0xff, 0xff, 0x18);
 
 // Tick marks
 pub const TICK_MAJOR: egui::Color32 =

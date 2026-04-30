@@ -116,12 +116,7 @@ impl KickVoice {
             || self.top_click.is_active()
     }
 
-    fn trigger(
-        &mut self,
-        params: &KickParams,
-        drift: &mut Drift,
-        sample_rate: f32,
-    ) {
+    fn trigger(&mut self, params: &KickParams, drift: &mut Drift, sample_rate: f32) {
         self.fadeout_gain = 1.0;
         self.fadeout_step = 0.0;
         self.triggered = true;
@@ -223,11 +218,7 @@ impl KickVoice {
         let sub_freq = self.sub_pitch_env.tick();
         let sub_amp = self.sub_amp_env.tick();
         let sub_raw = self.sub_osc.tick(sub_freq) * params.sub_gain;
-        let sub_shaped = voice_clip::apply(
-            params.kick_clip_mode,
-            params.kick_clip_drive,
-            sub_raw,
-        );
+        let sub_shaped = voice_clip::apply(params.kick_clip_mode, params.kick_clip_drive, sub_raw);
         let sub = sub_shaped * sub_amp;
 
         // MID: sine path and noise path are now SEPARATE — tone goes
@@ -241,11 +232,8 @@ impl KickVoice {
         let mid_amp = self.mid_amp_env.tick();
         let mid_noise_amp = self.mid_noise_amp_env.tick();
         let mid_tone_raw = self.mid_osc.tick(mid_freq) * params.mid_tone_gain * params.mid_gain;
-        let mid_tone_shaped = voice_clip::apply(
-            params.kick_clip_mode,
-            params.kick_clip_drive,
-            mid_tone_raw,
-        );
+        let mid_tone_shaped =
+            voice_clip::apply(params.kick_clip_mode, params.kick_clip_drive, mid_tone_raw);
         let mid_noise_raw =
             self.mid_noise.tick(params.mid_noise_color) * params.mid_noise_gain * params.mid_gain;
         let mid = mid_tone_shaped * mid_amp + mid_noise_raw * mid_noise_amp;
@@ -402,18 +390,11 @@ impl KickEngine {
                 self.voices[self.active_voice].start_fadeout(self.sample_rate);
             }
         }
-        self.voices[self.active_voice].trigger(
-            params,
-            &mut self.drift,
-            self.sample_rate,
-        );
+        self.voices[self.active_voice].trigger(params, &mut self.drift, self.sample_rate);
 
         if params.clap_on {
-            self.clap.set_params(
-                self.sample_rate,
-                params.clap_freq,
-                params.clap_tail_ms,
-            );
+            self.clap
+                .set_params(self.sample_rate, params.clap_freq, params.clap_tail_ms);
             self.clap.trigger();
         }
     }
@@ -454,11 +435,7 @@ impl KickEngine {
                         self.voices[self.active_voice].start_fadeout(self.sample_rate);
                     }
                 }
-                self.voices[self.active_voice].trigger(
-                    params,
-                    &mut self.drift,
-                    self.sample_rate,
-                );
+                self.voices[self.active_voice].trigger(params, &mut self.drift, self.sample_rate);
             }
 
             // Sum all voices (some may be fading out).
@@ -857,9 +834,7 @@ mod tests {
         engine.process(&mut l, &mut r, &legacy);
         // Take the last few ms — should still have measurable noise content.
         let tail_start = n.saturating_sub((0.005 * 44100.0) as usize);
-        let tail_peak = l[tail_start..]
-            .iter()
-            .fold(0.0f32, |a, &b| a.max(b.abs()));
+        let tail_peak = l[tail_start..].iter().fold(0.0f32, |a, &b| a.max(b.abs()));
         assert!(
             tail_peak > 0.005,
             "legacy noise (decay_ms=0 → mid_decay fallback) silenced too early; tail_peak {tail_peak}"
@@ -878,7 +853,7 @@ mod tests {
             ..KickParams::default()
         };
         let p_zero_drive = KickParams {
-            kick_clip_mode: 1, // tanh, but...
+            kick_clip_mode: 1,    // tanh, but...
             kick_clip_drive: 0.0, // ...drive=0 short-circuits to identity
             ..KickParams::default()
         };
@@ -1162,7 +1137,11 @@ mod tests {
         let mut right = vec![0.0f32; 128];
         engine.process(&mut left, &mut right, &params);
         let prev = left[127];
-        assert!(prev.abs() > 0.01, "expected nonzero decay tail, got {}", prev);
+        assert!(
+            prev.abs() > 0.01,
+            "expected nonzero decay tail, got {}",
+            prev
+        );
 
         // Retrigger, then process a single sample.
         engine.trigger(&params);
@@ -1283,7 +1262,10 @@ mod tests {
         e2.process(&mut l2, &mut r2, &params_yes);
 
         let diff: f32 = l1.iter().zip(l2.iter()).map(|(a, b)| (a - b).abs()).sum();
-        assert!(diff > 0.1, "metal should change the click character, diff={diff}");
+        assert!(
+            diff > 0.1,
+            "metal should change the click character, diff={diff}"
+        );
     }
 
     // ---- Clap layer ----
@@ -1337,12 +1319,7 @@ mod tests {
         // tail should still be contributing energy — off buffer is silent,
         // on buffer is not.
         let tail = |s: &[f32]| -> f32 {
-            (s[8000..10000]
-                .iter()
-                .map(|x| x * x)
-                .sum::<f32>()
-                / 2000.0)
-                .sqrt()
+            (s[8000..10000].iter().map(|x| x * x).sum::<f32>() / 2000.0).sqrt()
         };
         let off_rms = tail(&l_off);
         let on_rms = tail(&l_on);

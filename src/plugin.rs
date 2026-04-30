@@ -277,9 +277,8 @@ impl Plugin for Niner {
             if transport.playing {
                 if let Some(pos_beats) = transport.pos_beats() {
                     let step_float = pos_beats * 4.0;
-                    let new_step = (step_float.floor() as i64)
-                        .rem_euclid(sequencer::STEPS as i64)
-                        as usize;
+                    let new_step =
+                        (step_float.floor() as i64).rem_euclid(sequencer::STEPS as i64) as usize;
                     if self.last_host_step != Some(new_step) {
                         self.last_host_step = Some(new_step);
                         self.sequencer
@@ -422,8 +421,7 @@ impl Plugin for Niner {
                 };
 
                 const UNITY_TO_PLUS_6DB: f32 = 1.995_262_3 - 1.0;
-                let warmth_amount =
-                    ((master_gain - 1.0) / UNITY_TO_PLUS_6DB).clamp(0.0, 1.0);
+                let warmth_amount = ((master_gain - 1.0) / UNITY_TO_PLUS_6DB).clamp(0.0, 1.0);
                 let (wl, wr) = self.tube_warmth.process_sample(cl, cr, warmth_amount);
 
                 // DJ Filter POST: after warmth, before master volume
@@ -659,7 +657,9 @@ mod tests {
             let mut max_delta_idx = 0usize;
             for i in 1..slice.len() {
                 let a = slice[i].abs();
-                if a > max_abs { max_abs = a; }
+                if a > max_abs {
+                    max_abs = a;
+                }
                 let d = (slice[i] - slice[i - 1]).abs();
                 if d > max_delta {
                     max_delta = d;
@@ -679,7 +679,10 @@ mod tests {
         let mut worst_idx = 0usize;
         for i in 1..samples.len() {
             let d = (samples[i] - samples[i - 1]).abs();
-            if d > worst { worst = d; worst_idx = i; }
+            if d > worst {
+                worst = d;
+                worst_idx = i;
+            }
         }
         eprintln!("OVERALL worst delta = {worst:.6} at sample {worst_idx}");
         // Threshold tuned to catch bitcrush-style artifacts that exceed the
@@ -754,8 +757,12 @@ mod tests {
             engine.process(&mut buf_l, &mut buf_r, &params);
 
             for j in 0..n {
-                if !buf_l[j].is_finite() { buf_l[j] = 0.0; }
-                if !buf_r[j].is_finite() { buf_r[j] = 0.0; }
+                if !buf_l[j].is_finite() {
+                    buf_l[j] = 0.0;
+                }
+                if !buf_r[j].is_finite() {
+                    buf_r[j] = 0.0;
+                }
 
                 let (pre_l, pre_r) = dj.process_sample(buf_l[j], buf_r[j], 0.0, 0.0);
 
@@ -765,9 +772,13 @@ mod tests {
                 master_bus.set_times(10.0, 100.0, sr);
                 let (cl, cr) = if comp_amount > 0.0001 || comp_drive > 0.001 || limiter_on {
                     master_bus.process_sample(
-                        pre_l, pre_r,
-                        threshold_db, ratio, knee_db,
-                        comp_drive, limiter_on,
+                        pre_l,
+                        pre_r,
+                        threshold_db,
+                        ratio,
+                        knee_db,
+                        comp_drive,
+                        limiter_on,
                     )
                 } else {
                     (pre_l, pre_r)
@@ -826,13 +837,20 @@ mod tests {
         for (i, &s) in samples.iter().enumerate() {
             assert!(s.is_finite(), "non-finite at sample {i}");
         }
-        let mut worst = 0.0f32; let mut worst_idx = 0usize;
+        let mut worst = 0.0f32;
+        let mut worst_idx = 0usize;
         for i in 1..samples.len() {
-            let d = (samples[i] - samples[i-1]).abs();
-            if d > worst { worst = d; worst_idx = i; }
+            let d = (samples[i] - samples[i - 1]).abs();
+            if d > worst {
+                worst = d;
+                worst_idx = i;
+            }
         }
         eprintln!("909 worst delta = {worst:.6} at sample {worst_idx}");
-        assert!(worst < 0.7, "audible artifact in 909 preset: delta {worst:.6} at {worst_idx}");
+        assert!(
+            worst < 0.7,
+            "audible artifact in 909 preset: delta {worst:.6} at {worst_idx}"
+        );
     }
 
     /// Comp + limiter + drive engaged + master_volume above unity (tube
@@ -844,16 +862,23 @@ mod tests {
         for (i, &s) in samples.iter().enumerate() {
             assert!(s.is_finite(), "non-finite at sample {i}");
         }
-        let mut worst = 0.0f32; let mut worst_idx = 0usize;
+        let mut worst = 0.0f32;
+        let mut worst_idx = 0usize;
         for i in 1..samples.len() {
-            let d = (samples[i] - samples[i-1]).abs();
-            if d > worst { worst = d; worst_idx = i; }
+            let d = (samples[i] - samples[i - 1]).abs();
+            if d > worst {
+                worst = d;
+                worst_idx = i;
+            }
         }
         eprintln!("everything-on worst delta = {worst:.6} at sample {worst_idx}");
         // Comp + limiter introduce dynamic compression so single-sample
         // deltas can be larger than the un-comped tests, but should still
         // stay well under unity.
-        assert!(worst < 1.0, "audible artifact: delta {worst:.6} at {worst_idx}");
+        assert!(
+            worst < 1.0,
+            "audible artifact: delta {worst:.6} at {worst_idx}"
+        );
     }
 
     /// Heavy retriggering: 32nd notes (16/sec at 120 BPM) — voice stealing
@@ -865,13 +890,20 @@ mod tests {
         for (i, &s) in samples.iter().enumerate() {
             assert!(s.is_finite(), "non-finite at sample {i}");
         }
-        let mut worst = 0.0f32; let mut worst_idx = 0usize;
+        let mut worst = 0.0f32;
+        let mut worst_idx = 0usize;
         for i in 1..samples.len() {
-            let d = (samples[i] - samples[i-1]).abs();
-            if d > worst { worst = d; worst_idx = i; }
+            let d = (samples[i] - samples[i - 1]).abs();
+            if d > worst {
+                worst = d;
+                worst_idx = i;
+            }
         }
         eprintln!("heavy_retrig worst delta = {worst:.6} at sample {worst_idx}");
-        assert!(worst < 0.6, "audible artifact in heavy retrigger: delta {worst:.6} at {worst_idx}");
+        assert!(
+            worst < 0.6,
+            "audible artifact in heavy retrigger: delta {worst:.6} at {worst_idx}"
+        );
     }
 
     #[test]
@@ -1044,9 +1076,8 @@ mod tests {
             // Run through master chain with comp engaged
             for i in 0..len {
                 master_bus.set_times(10.0, 200.0, sr);
-                let (cl, cr) = master_bus.process_sample(
-                    buf_l[i], buf_r[i], -18.0, 4.0, 6.0, 0.0, false,
-                );
+                let (cl, cr) =
+                    master_bus.process_sample(buf_l[i], buf_r[i], -18.0, 4.0, 6.0, 0.0, false);
                 let (wl, _wr) = tube.process_sample(cl, cr, 0.0);
                 let (fl, _fr) = filt.process_sample(wl, wl, 0.0, 0.0);
                 output[start + i] = fl;
@@ -1066,9 +1097,7 @@ mod tests {
         }
         // Identify which hit boundary the worst delta is near
         let near_hit = worst_idx / hit_interval;
-        eprintln!(
-            "worst delta = {worst_delta:.6} at sample {worst_idx} (near hit {near_hit})"
-        );
+        eprintln!("worst delta = {worst_delta:.6} at sample {worst_idx} (near hit {near_hit})");
         assert!(
             worst_delta < 0.4,
             "click detected at sample {worst_idx}: delta = {worst_delta:.4}"

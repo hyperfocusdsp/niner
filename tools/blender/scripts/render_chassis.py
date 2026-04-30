@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import shutil
 import sys
 from pathlib import Path
@@ -36,7 +37,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--preset", required=True)
 parser.add_argument("--samples", type=int, default=None,
                     help="Override preset.render.samples (small N for fast iteration)")
+parser.add_argument("--only-screws", action="store_true",
+                    help="Render ONLY the screws against a transparent background. "
+                         "Skips plate, bezels, grooves, edge band, rack ears. "
+                         "Output goes to assets/screws.png so the runtime can "
+                         "composite the screw layer on top of a clean chassis bake.")
 args = parser.parse_args(argv)
+only_screws = bool(args.only_screws)
 
 preset_path = Path(args.preset).resolve()
 preset = json.loads(preset_path.read_text())
@@ -185,12 +192,14 @@ chassis_mat = make_hammertone_material(
     uv_warp=0.04,
 )
 
-# Screws — brushed steel, slight cool tint to contrast the warm chassis.
+# Screws — polished steel, brighter base + low roughness so the 5-px
+# screws pop visibly against the dark hammertone panel. At small scale,
+# specular highlights are what tell the eye "this is metal, not paint."
 screw_mat = make_pbr_material(
     "screw_steel",
-    base_color=(0.18, 0.18, 0.20),
-    metallic=0.85,
-    roughness=0.30,
+    base_color=(0.42, 0.42, 0.44),
+    metallic=0.95,
+    roughness=0.22,
 )
 
 # World — very low ambient so grain shadow stays visible (research rec).
@@ -250,7 +259,10 @@ def make_box_cutter(rust_x: float, rust_y: float, rust_w: float, rust_h: float,
     return cutter
 
 
-plate = add_chassis_plate()
+if not only_screws:
+    plate = add_chassis_plate()
+else:
+    plate = None
 
 
 # ---------------------------------------------------------------------------
@@ -283,8 +295,9 @@ def add_bezel_inset(bezel_cfg: dict, frame_padding: float, depth: float,
 bezels = preset["bezels"]
 frame_padding = float(bezels.get("frame_padding", 4.0))
 extrusion_depth = float(bezels.get("extrusion_depth", 0.8))
-add_bezel_inset(bezels["output"], frame_padding, extrusion_depth, "output")
-add_bezel_inset(bezels["comp"], frame_padding, extrusion_depth, "comp")
+if not only_screws:
+    add_bezel_inset(bezels["output"], frame_padding, extrusion_depth, "output")
+    add_bezel_inset(bezels["comp"], frame_padding, extrusion_depth, "comp")
 
 
 # ---------------------------------------------------------------------------
@@ -309,12 +322,13 @@ def add_groove(rust_y: float, depth: float, thickness: float):
 
 
 grooves = preset.get("grooves", {})
-for groove_y in grooves.get("y_positions", []):
-    add_groove(
-        float(groove_y),
-        float(grooves.get("depth_px", 0.4)),
-        float(grooves.get("thickness_px", 1.5)),
-    )
+if not only_screws:
+    for groove_y in grooves.get("y_positions", []):
+        add_groove(
+            float(groove_y),
+            float(grooves.get("depth_px", 0.4)),
+            float(grooves.get("thickness_px", 1.5)),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +337,7 @@ for groove_y in grooves.get("y_positions", []):
 edge = preset.get("edge_band", {})
 edge_h = float(edge.get("height_px", 12.0))
 edge_step = float(edge.get("step_px", 0.4))
-if edge_step > 0.0:
+if edge_step > 0.0 and not only_screws:
     # Recess top band
     cutter_top = make_box_cutter(
         0.0, 0.0, canvas_w, edge_h,
@@ -343,13 +357,14 @@ if edge_step > 0.0:
 
 
 # Soften all the new boolean edges with a small bevel.
-bpy.context.view_layer.objects.active = plate
-plate_bevel = plate.modifiers.new(name="plate_bevel", type="BEVEL")
-plate_bevel.width = 0.25
-plate_bevel.segments = 2
-plate_bevel.limit_method = "ANGLE"
-plate_bevel.angle_limit = math.radians(30)
-bpy.ops.object.modifier_apply(modifier="plate_bevel")
+if not only_screws:
+    bpy.context.view_layer.objects.active = plate
+    plate_bevel = plate.modifiers.new(name="plate_bevel", type="BEVEL")
+    plate_bevel.width = 0.25
+    plate_bevel.segments = 2
+    plate_bevel.limit_method = "ANGLE"
+    plate_bevel.angle_limit = math.radians(30)
+    bpy.ops.object.modifier_apply(modifier="plate_bevel")
 
 
 # ---------------------------------------------------------------------------
@@ -437,26 +452,37 @@ def add_rack_ear(side: str) -> bpy.types.Object:
     return ear
 
 
-add_rack_ear("left")
-add_rack_ear("right")
+if not only_screws:
+    add_rack_ear("left")
+    add_rack_ear("right")
 
 
 # ---------------------------------------------------------------------------
-# Phillips screws — 4 corners
+# Hex socket screws — 4 corners, each with deterministic random Z rotation
+# (in [0°, 60°) — hex has 6-fold symmetry) plus subtle ±2° head tilt so no
+# two screws look perfectly aligned. Real bolts are never installed at the
+# exact same angle; this is the single biggest realism cue at small scale.
 # ---------------------------------------------------------------------------
-def add_phillips_screw(rust_x: float, rust_y: float, radius: float) -> bpy.types.Object:
-    """Phillips-style screw head: cylinder + beveled top edge + cross slot.
+def add_hex_screw(
+    rust_x: float,
+    rust_y: float,
+    radius: float,
+    z_rot: float,
+    x_tilt: float,
+    y_tilt: float,
+) -> bpy.types.Object:
+    """Hex-socket screw head: cylinder cap + beveled rim + recessed hex socket.
 
-    Iter 1 uses a simple disc with a beveled top — detailed cross-slot
-    geometry can land in iter 2. The current draw_screw procedural version
-    fakes a hex socket with 6 dots, so a clean disc + bevel is already an
-    upgrade in fidelity. Cross slot can come if/when needed.
+    `z_rot` rotates the head and the socket together so the hex pattern
+    follows the cap. `x_tilt` / `y_tilt` rock the whole screw a few degrees
+    off-axis so each one catches the key light differently.
     """
     cx, cy = rust_to_world(rust_x, rust_y)
-    height = 0.8  # 0.8 BU = 0.8 px proud of the plate; small but real
+    height = 1.1  # taller cap — sits prouder above the panel for sharper rim shadow
 
+    # --- Cap body ---
     bpy.ops.mesh.primitive_cylinder_add(
-        vertices=48,
+        vertices=64,
         radius=radius,
         depth=height,
         location=(cx, cy, height / 2.0),
@@ -464,50 +490,77 @@ def add_phillips_screw(rust_x: float, rust_y: float, radius: float) -> bpy.types
     screw = bpy.context.active_object
     screw.name = f"screw_{int(rust_x)}_{int(rust_y)}"
 
-    # Bevel the top rim — 30° angle limit catches just the top circular edge.
+    # Bevel the top rim — sharper than Phillips so the cap silhouette
+    # reads as machined steel.
     bevel = screw.modifiers.new(name="rim_bevel", type="BEVEL")
     bevel.width = radius * 0.18
-    bevel.segments = 3
+    bevel.segments = 4
     bevel.limit_method = "ANGLE"
-    bevel.angle_limit = math.radians(30)
+    bevel.angle_limit = math.radians(35)
     bpy.ops.object.modifier_apply(modifier="rim_bevel")
 
-    # Cross slot — two thin cuboids subtracted from the top.
-    slot_depth = height * 0.5
-    slot_w = radius * 0.18
-    slot_l = radius * 1.5
-
-    cutters = []
-    for axis in ("x", "y"):
-        bpy.ops.mesh.primitive_cube_add(
-            size=1,
-            location=(cx, cy, height - slot_depth / 2.0),
-        )
-        cutter = bpy.context.active_object
-        if axis == "x":
-            cutter.scale = (slot_l, slot_w, slot_depth * 2.0)
-        else:
-            cutter.scale = (slot_w, slot_l, slot_depth * 2.0)
-        bpy.ops.object.transform_apply(scale=True)
-        cutters.append(cutter)
-
-    bpy.context.view_layer.objects.active = screw
-    for cutter in cutters:
-        mod = screw.modifiers.new(name=f"slot_{cutter.name}", type="BOOLEAN")
-        mod.operation = "DIFFERENCE"
-        mod.object = cutter
-        bpy.ops.object.modifier_apply(modifier=mod.name)
-    for cutter in cutters:
-        bpy.data.objects.remove(cutter, do_unlink=True)
-
     screw.data.materials.append(screw_mat)
+
+    # --- Hex socket cutter ---
+    # A 6-vertex cylinder is a regular hex prism. Place it inset into the
+    # cap, slightly above the head plane so the boolean leaves a clean
+    # recessed socket. `vertices=6` + matching `z_rot` makes the flats and
+    # corners line up cleanly with the cap rotation. At 5-px radius the
+    # socket has to be relatively wide to read as anything more than a dark
+    # spot — 0.62× of cap radius keeps it clearly hexagonal.
+    socket_radius = radius * 0.62
+    socket_depth = height * 0.50
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=6,
+        radius=socket_radius,
+        depth=socket_depth,
+        location=(cx, cy, height - socket_depth / 2.0 + 0.08),
+    )
+    socket = bpy.context.active_object
+    socket.name = f"socket_{int(rust_x)}_{int(rust_y)}"
+    # Rotate the socket prism by `z_rot` so the hex flats follow the cap
+    # rotation. (At z_rot=0 the prism has a flat side facing +X; over
+    # [0, 60°) it sweeps the full hex symmetry orbit.)
+    socket.rotation_euler = (0.0, 0.0, z_rot)
+    bpy.ops.object.transform_apply(rotation=True)
+
+    # Apply boolean: cap minus socket.
+    bpy.context.view_layer.objects.active = screw
+    mod = screw.modifiers.new(name="hex_socket", type="BOOLEAN")
+    mod.operation = "DIFFERENCE"
+    mod.object = socket
+    bpy.ops.object.modifier_apply(modifier="hex_socket")
+    bpy.data.objects.remove(socket, do_unlink=True)
+
+    # --- Apply head tilt + rotation last so the socket follows ---
+    # Set object origin to the screw centre so rotation pivots around the
+    # cap centre (otherwise tilts swing the cap away from its mounting
+    # position). Rotation_euler is applied to the object transform; the
+    # socket geometry follows because the boolean already baked it in.
+    screw.location = (cx, cy, height / 2.0)
+    screw.rotation_euler = (x_tilt, y_tilt, 0.0)
+    bpy.ops.object.transform_apply(rotation=True)
+
     return screw
 
 
 screws_cfg = preset["screws"]
 screw_radius = float(screws_cfg["radius"])
-for sx, sy in screws_cfg["positions"]:
-    add_phillips_screw(float(sx), float(sy), screw_radius)
+# `enabled=false` skips the screws entirely (used when chassis.png is being
+# baked as a clean plate that the runtime composites screws.png on top of).
+# `--only-screws` always forces them in regardless.
+screws_enabled = only_screws or bool(screws_cfg.get("enabled", True))
+# Deterministic seed so the same chassis preset always renders identical
+# screw rotations — important for the layout-drift check and for repeatable
+# marketing renders.
+SCREW_SEED_BASE = 0x9E_9E
+if screws_enabled:
+    for idx, (sx, sy) in enumerate(screws_cfg["positions"]):
+        rng = random.Random(SCREW_SEED_BASE + idx * 7919)
+        z_rot = rng.uniform(0.0, math.pi / 3.0)         # 0..60°  (hex 6-fold sym)
+        x_tilt = rng.uniform(-math.radians(2.0), math.radians(2.0))
+        y_tilt = rng.uniform(-math.radians(2.0), math.radians(2.0))
+        add_hex_screw(float(sx), float(sy), screw_radius, z_rot, x_tilt, y_tilt)
 
 
 # ---------------------------------------------------------------------------
@@ -603,11 +656,14 @@ scene.render.resolution_y = int(canvas_h * scale)
 scene.render.resolution_percentage = 100
 
 scene.render.image_settings.file_format = "PNG"
-scene.render.image_settings.color_mode = "RGB"
+# RGBA + transparent film when isolating the screw layer so the runtime can
+# composite it on top of the clean chassis bake.
+scene.render.image_settings.color_mode = "RGBA" if only_screws else "RGB"
 scene.render.image_settings.color_depth = "8"
-scene.render.film_transparent = False
+scene.render.film_transparent = bool(only_screws)
 
-out_path = output_dir / "chassis.png"
+out_filename = "screws.png" if only_screws else "chassis.png"
+out_path = output_dir / out_filename
 scene.render.filepath = str(out_path)
 
 
@@ -623,7 +679,7 @@ print(f"[render_chassis]   engine: {scene.render.engine}, samples: {samples}")
 # other preset (e.g. `chassis_marketing.json`) leaves assets/ alone and
 # stays in tools/blender/output/<preset>/ for hero shots / IG content.
 if preset_name == "chassis":
-    target = assets_dir / "chassis.png"
+    target = assets_dir / out_filename
     shutil.copy2(out_path, target)
 
     # Re-encode with max PNG compression — Cycles' default writer leaves

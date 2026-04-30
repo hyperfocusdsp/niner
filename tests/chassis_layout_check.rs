@@ -13,8 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn load_preset() -> Value {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tools/blender/presets/chassis.json");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools/blender/presets/chassis.json");
     let text = fs::read_to_string(&path).expect("chassis.json missing or unreadable");
     serde_json::from_str(&text).expect("chassis.json is not valid JSON")
 }
@@ -70,8 +69,8 @@ fn screw_positions_match() {
     // (panel_left + 8, panel_top + 18) and three corners of (680 × 444).
     let expected = [
         (8.0, 18.0),
-        (672.0, 18.0),  // right = 680 - 8
-        (8.0, 426.0),   // bottom = 444 - 18
+        (672.0, 18.0), // right = 680 - 8
+        (8.0, 426.0),  // bottom = 444 - 18
         (672.0, 426.0),
     ];
     for (i, (ex, ey)) in expected.iter().enumerate() {

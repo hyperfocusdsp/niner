@@ -4,8 +4,8 @@
 //! highlight) and the audio thread (advance counter, read steps, fire
 //! triggers) via plain atomics — no locks, RT-safe.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 
@@ -62,19 +62,12 @@ pub struct Sequencer {
 }
 
 impl Sequencer {
-    pub fn new(
-        persist_mirror: Arc<Mutex<u16>>,
-        accent_persist_mirror: Arc<Mutex<u16>>,
-    ) -> Self {
+    pub fn new(persist_mirror: Arc<Mutex<u16>>, accent_persist_mirror: Arc<Mutex<u16>>) -> Self {
         let initial_bits = *persist_mirror.lock();
         let initial_accents = *accent_persist_mirror.lock();
         Self {
-            steps: std::array::from_fn(|i| {
-                AtomicBool::new((initial_bits >> i) & 1 != 0)
-            }),
-            accents: std::array::from_fn(|i| {
-                AtomicBool::new((initial_accents >> i) & 1 != 0)
-            }),
+            steps: std::array::from_fn(|i| AtomicBool::new((initial_bits >> i) & 1 != 0)),
+            accents: std::array::from_fn(|i| AtomicBool::new((initial_accents >> i) & 1 != 0)),
             running: AtomicBool::new(false),
             bpm_milli: AtomicU32::new((DEFAULT_BPM * 1000.0) as u32),
             current_step: AtomicUsize::new(0),
@@ -165,6 +158,17 @@ impl Sequencer {
             let mut acc_bits = self.accent_persist_mirror.lock();
             *acc_bits &= !(1u16 << idx);
         }
+    }
+
+    /// UI-thread only: clear every step (and its accent). Used by the
+    /// CLEAR button next to BOUNCE in the SAT/EQ row.
+    pub fn clear_pattern(&self) {
+        for idx in 0..STEPS {
+            self.steps[idx].store(false, Ordering::Relaxed);
+            self.accents[idx].store(false, Ordering::Relaxed);
+        }
+        *self.persist_mirror.lock() = 0;
+        *self.accent_persist_mirror.lock() = 0;
     }
 
     /// UI-thread only: toggle the accent flag on a step. No-op when the

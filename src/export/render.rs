@@ -117,7 +117,11 @@ pub fn render_oneshot(
 
     let threshold_db = -6.0 + amount * -24.0;
     let ratio = 2.0 + amount * 8.0;
-    master_bus.set_times(master_chain.comp_atk_ms, master_chain.comp_rel_ms, EXPORT_SR);
+    master_bus.set_times(
+        master_chain.comp_atk_ms,
+        master_chain.comp_rel_ms,
+        EXPORT_SR,
+    );
 
     let comp_active = amount > 0.0001 || drive > 0.001 || limiter_on;
 
@@ -300,7 +304,9 @@ mod tests {
         let n = (0.002 * EXPORT_SR) as usize;
         let tail_l = &l[l.len() - n..];
         let peak_start = tail_l[..n / 4].iter().fold(0.0f32, |m, &x| m.max(x.abs()));
-        let peak_end = tail_l[3 * n / 4..].iter().fold(0.0f32, |m, &x| m.max(x.abs()));
+        let peak_end = tail_l[3 * n / 4..]
+            .iter()
+            .fold(0.0f32, |m, &x| m.max(x.abs()));
         assert!(
             peak_end <= peak_start,
             "tail should decay: start={peak_start} end={peak_end}"

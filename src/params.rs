@@ -484,8 +484,7 @@ impl Default for NinerParams {
                 .with_unit(" oct")
                 .with_value_to_string(formatters::v2s_f32_rounded(1)),
 
-            top_metal: pct_knob("Top Metal", 0.0)
-                .with_smoother(SmoothingStyle::Linear(10.0)),
+            top_metal: pct_knob("Top Metal", 0.0).with_smoother(SmoothingStyle::Linear(10.0)),
 
             // --- Drift ---
             drift_amount: pct_knob("Drift", 0.0),
@@ -576,12 +575,9 @@ impl Default for NinerParams {
             // Defaults chosen so a fresh instance is bit-identical to the
             // pre-compressor build: amount = 0 and limiter off together
             // hit the bypass branch in `plugin.rs`.
-            comp_amount: pct_knob("Comp Amount", 0.0)
-                .with_smoother(SmoothingStyle::Linear(10.0)),
-            comp_react: pct_knob("Comp React", 0.35)
-                .with_smoother(SmoothingStyle::Linear(10.0)),
-            comp_drive: pct_knob("Comp Drive", 0.0)
-                .with_smoother(SmoothingStyle::Linear(10.0)),
+            comp_amount: pct_knob("Comp Amount", 0.0).with_smoother(SmoothingStyle::Linear(10.0)),
+            comp_react: pct_knob("Comp React", 0.35).with_smoother(SmoothingStyle::Linear(10.0)),
+            comp_drive: pct_knob("Comp Drive", 0.0).with_smoother(SmoothingStyle::Linear(10.0)),
             comp_limit_on: BoolParam::new("Comp Limiter", false),
 
             // Precise comp knobs. Defaults match RCT=0.35 under the old
@@ -632,10 +628,7 @@ impl Default for NinerParams {
             clap_level: FloatParam::new(
                 "Clap Level",
                 0.9,
-                FloatRange::Linear {
-                    min: 0.0,
-                    max: 1.5,
-                },
+                FloatRange::Linear { min: 0.0, max: 1.5 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0))
             .with_value_to_string(formatters::v2s_f32_rounded(2)),
@@ -667,7 +660,10 @@ impl Default for NinerParams {
             dj_filter_pos: FloatParam::new(
                 "DJ Filter",
                 0.0,
-                FloatRange::Linear { min: -1.0, max: 1.0 },
+                FloatRange::Linear {
+                    min: -1.0,
+                    max: 1.0,
+                },
             )
             .with_smoother(SmoothingStyle::Linear(5.0))
             .with_value_to_string(Arc::new(|v| {

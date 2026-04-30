@@ -276,10 +276,7 @@ mod tests {
         assert_eq!(&bytes[8..12], b"AIFF");
         assert_eq!(&bytes[12..16], b"COMM");
         // COMM size field.
-        assert_eq!(
-            u32::from_be_bytes(bytes[16..20].try_into().unwrap()),
-            18u32
-        );
+        assert_eq!(u32::from_be_bytes(bytes[16..20].try_into().unwrap()), 18u32);
         // SSND chunk follows the COMM payload (18 bytes).
         let ssnd_off = 20 + 18;
         assert_eq!(&bytes[ssnd_off..ssnd_off + 4], b"SSND");
