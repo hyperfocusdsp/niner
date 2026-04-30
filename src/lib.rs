@@ -8,12 +8,14 @@ use nih_plug::prelude::*;
 
 mod export;
 mod logging;
-mod params;
 mod plugin;
 mod presets;
-mod sequencer;
 
-mod dsp {
+// Public so integration tests under `tests/` can drive the engine, snapshot
+// params, and reproduce sequencer persist races. The cdylib bundles don't
+// expose Rust modules to the DAW host, so this has no external surface
+// impact (see `ui` below for the precedent).
+pub mod dsp {
     pub mod clap;
     pub mod click;
     pub mod dj_filter;
@@ -29,11 +31,11 @@ mod dsp {
     pub mod tube;
     pub mod voice_clip;
 }
+pub mod params;
+pub mod sequencer;
 
 // Public so integration tests (e.g. tests/chassis_layout_check.rs) can
-// assert against the layout constants in `ui::panels`. The cdylib bundles
-// don't expose Rust modules to the DAW host, so this has no external
-// surface impact.
+// assert against the layout constants in `ui::panels`.
 pub mod ui;
 
 mod util;

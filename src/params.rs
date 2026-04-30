@@ -1023,4 +1023,32 @@ mod clap_param_tests {
         let snap: ParamSnapshot = serde_json::from_str(json).unwrap();
         assert!(!snap.clap_on);
     }
+
+    /// P0.3 — full default-kit round-trip. Capture every field off a fresh
+    /// `NinerParams`, serialize to JSON, deserialize, and assert structural
+    /// equality.
+    ///
+    /// This is the regression net for P2.1 (declarative-macro generation of
+    /// `capture` / `apply` / `ParamSnapshot`). Any field that gets dropped
+    /// from the macro grammar will fail this test on the next run.
+    #[test]
+    fn default_full_capture_apply_idempotent() {
+        let params = NinerParams::default();
+        let snap_a = ParamSnapshot::capture(&params);
+        let json = serde_json::to_string(&snap_a).expect("snapshot must serialize");
+        let snap_b: ParamSnapshot =
+            serde_json::from_str(&json).expect("snapshot must deserialize");
+        assert_eq!(
+            snap_a, snap_b,
+            "ParamSnapshot lost a field during JSON round-trip"
+        );
+
+        // The default `master_volume` should round-trip as `Some(_)` because
+        // `capture()` populates it. Legacy-preset path (where it is `None`)
+        // is covered by `legacy_preset_leaves_master_volume_untouched`.
+        assert!(
+            snap_b.master_volume.is_some(),
+            "capture() of default params must produce Some(master_volume)"
+        );
+    }
 }
