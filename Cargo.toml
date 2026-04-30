@@ -11,6 +11,21 @@ authors = ["Hyperfocus DSP <hello@hyperfocusdsp.com>"]
 homepage = "https://hyperfocusdsp.com"
 repository = "https://github.com/hyperfocusdsp/niner"
 
+[features]
+# Default release builds ship without the layout editor: the 1054-line
+# drag/select/save panel surface is excluded from the binary. Built-in
+# layouts come from `assets/baked_layout.json` via `include_bytes!`,
+# so dev-tuned positions still ship — just locked at build time.
+default = []
+# Enable for layout-tuning dev builds:
+#   cargo run --release --features layout_editor --bin niner-standalone
+# When set, the editor compiles in, NINER_LAYOUT_EDITOR=1 + Alt+L work,
+# Save layout writes to <niner-data>/layout_overrides.json, and that
+# file is overlaid on top of the baked JSON at startup so iterative
+# tweaks don't require a rebuild. Run `cargo xtask lock-layout` to
+# copy your saved JSON into the baked asset before tagging a release.
+layout_editor = []
+
 [lib]
 # `cdylib` for VST3/CLAP bundles; `rlib` so the `niner-standalone` binary
 # can link against the same lib (no duplicated module trees).

@@ -1,0 +1,24 @@
+{
+  "bulk": {
+    "chrome_height_scale": 1.0,
+    "chrome_rounding_delta": 0.0,
+    "label_font_scale": 1.0,
+    "label_padding_delta": 0.0,
+    "snap_enabled": true,
+    "snap_grid": 2.0
+  },
+  "entries": {
+    "row.sat.cluster": {
+      "pos_offset_x": 0.0,
+      "pos_offset_y": 13.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "label.sat": {
+      "pos_offset_x": 0.0,
+      "pos_offset_y": 17.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    }
+  }
+}

@@ -1,41 +1,62 @@
-//! Hand-tuning aid: bulk + per-element layout overrides for the chrome.
+//! Layout overrides — bulk + per-element offsets applied to the chrome.
 //!
-//! The plugin ships with hard-coded layout literals so production builds
-//! always render identical pixels. This module lets the *developer* nudge
-//! those literals interactively when fine-positioning the panel by feel.
+//! ## Two compile modes
 //!
-//! Activation is gated three ways so end-users never see the editor:
-//!   1. Env var `NINER_LAYOUT_EDITOR=1` set when launching the standalone.
-//!   2. Atomic `LAYOUT_EDITOR_ON` flipped on at startup if the env var was
-//!      set.
-//!   3. Alt+L toggles the atomic at runtime so you can hide the panel after
-//!      it's served its purpose.
+//! * **Default (release)** — the editor UI is excluded. Layouts come from
+//!   `assets/baked_layout.json` via `include_bytes!`, parsed once at
+//!   editor construction. `instrument()` / `instrument_text()` apply the
+//!   offsets but never paint drag handles, never register an interact
+//!   surface. Production binaries pay only one JSON parse + an `Arc<Data>`
+//!   read per element per frame.
 //!
-//! Without the env var the atomic stays false, all `bulk()` /
-//! `override_for()` calls return identity values, and the runtime is
-//! pixel-identical to the no-override path.
+//! * **`--features layout_editor`** — the full hand-tuning panel compiles
+//!   in. Activation is then gated three more ways:
+//!   1. Env var `NINER_LAYOUT_EDITOR=1` flips `LAYOUT_EDITOR_ON` at startup.
+//!   2. Alt+L toggles it at runtime.
+//!   3. Without either, the atomic stays false and `instrument()` matches
+//!      the default-build behavior — pixel-identical.
+//!   "Save layout" writes to `<niner-data>/layout_overrides.json`, which
+//!   is overlaid on top of the baked JSON at the next startup. Run
+//!   `cargo xtask lock-layout` to bake the saved JSON into the asset.
 //!
-//! Persistence: when the editor is on, "Save layout" writes the current
-//! state to `<niner-data>/layout_overrides.json`. The next launch with
-//! the env var set reloads it; without the env var it's ignored.
+//! ## Snapping (editor-only)
 //!
-//! Snapping: while the editor is on, drag motion is snapped to a
-//! configurable pixel grid (default 2 px). Holding Shift during a drag
-//! bypasses the grid for sub-pixel nudges. Holding Ctrl multiplies the
-//! grid ×4 for coarser placement. Right-click an element to reset its
-//! offset to zero.
+//! Drag motion is snapped to a configurable pixel grid (default 2 px).
+//! Holding Shift during a drag bypasses the grid for sub-pixel nudges.
+//! Holding Ctrl multiplies the grid ×4 for coarser placement. Right-click
+//! an element to reset its offset to zero.
 
 use nih_plug_egui::egui;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(feature = "layout_editor")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(feature = "layout_editor")]
 use crate::util::paths::niner_data_dir;
 
-/// Master switch: when false, every accessor returns identity values and
-/// the editor panel doesn't render. Initialized from `NINER_LAYOUT_EDITOR`
-/// at startup; toggled by Alt+L thereafter.
+/// Layouts shipped in the release binary. Captured at build time from
+/// `assets/baked_layout.json` (mirror of the dev-tuned
+/// `<niner-data>/layout_overrides.json`). Run `cargo xtask lock-layout`
+/// to refresh.
+const BAKED_LAYOUT_JSON: &[u8] = include_bytes!("../../assets/baked_layout.json");
+
+/// Master switch — only present when the editor is compiled in. Initialized
+/// from `NINER_LAYOUT_EDITOR` at startup; toggled by Alt+L thereafter.
+#[cfg(feature = "layout_editor")]
 pub static LAYOUT_EDITOR_ON: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "layout_editor")]
+#[inline]
+fn is_editor_on() -> bool {
+    LAYOUT_EDITOR_ON.load(Ordering::Relaxed)
+}
+
+#[cfg(not(feature = "layout_editor"))]
+#[inline]
+fn is_editor_on() -> bool {
+    false
+}
 
 /// Bulk multipliers/offsets that apply uniformly to a class of widgets.
 /// All defaults are identity (1.0 / 0.0) except snap, which defaults
@@ -112,14 +133,16 @@ pub struct LayoutOverrides {
 }
 
 const DATA_KEY: &str = "niner_layout_overrides";
+
+#[cfg(feature = "layout_editor")]
+const REGISTRY_KEY: &str = "niner_layout_registry";
+#[cfg(feature = "layout_editor")]
+const SELECTION_KEY: &str = "niner_layout_selection";
+
 /// Per-frame keyset of every instrumented element. Cleared at the start
 /// of each frame (lazy — when the editor panel renders) so the panel's
 /// "registered elements" list reflects what actually painted this frame.
-const REGISTRY_KEY: &str = "niner_layout_registry";
-/// Currently-selected element keys. Stored in `ctx.data` so the selection
-/// outlives the per-call `instrument()` borrow.
-const SELECTION_KEY: &str = "niner_layout_selection";
-
+#[cfg(feature = "layout_editor")]
 #[derive(Clone, Debug, Default)]
 struct ElementRegistry {
     /// Frame index at which this registry was last reset. Stale entries
@@ -131,50 +154,65 @@ struct ElementRegistry {
     rects: HashMap<String, egui::Rect>,
 }
 
+#[cfg(feature = "layout_editor")]
 #[derive(Clone, Debug, Default)]
 struct Selection {
     keys: Vec<String>,
 }
 
+#[cfg(feature = "layout_editor")]
 fn get_selection(ctx: &egui::Context) -> Selection {
     ctx.data(|d| d.get_temp::<Selection>(egui::Id::new(SELECTION_KEY)).unwrap_or_default())
 }
 
+#[cfg(feature = "layout_editor")]
 fn set_selection(ctx: &egui::Context, sel: Selection) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(SELECTION_KEY), sel));
 }
 
+#[cfg(feature = "layout_editor")]
 fn is_selected(ctx: &egui::Context, key: &str) -> bool {
     get_selection(ctx).keys.iter().any(|k| k == key)
 }
 
+#[cfg(feature = "layout_editor")]
 fn store_path() -> std::path::PathBuf {
     niner_data_dir().join("layout_overrides.json")
 }
 
-/// Probe the env var, then load any saved layout from disk so the
-/// offsets are available the moment the editor turns on (whether by
-/// env var at startup or by Alt+L mid-session). Production builds
-/// where the user has never saved a layout still pay only one
-/// `read_to_string` per editor creation.
+/// Seed the egui temp data store with the effective layout. Always parses
+/// the baked JSON (compiled into the binary via `include_bytes!`); when
+/// the editor feature is enabled and a `<niner-data>/layout_overrides.json`
+/// file exists, that file overrides the baked baseline so iterative
+/// tweaks during a tuning session don't require a rebuild.
 pub fn init(ctx: &egui::Context) {
-    let on = std::env::var("NINER_LAYOUT_EDITOR")
-        .map(|v| v != "0" && !v.is_empty())
-        .unwrap_or(false);
-    LAYOUT_EDITOR_ON.store(on, Ordering::Relaxed);
+    let baked = parse_baked();
+    #[cfg(feature = "layout_editor")]
+    let effective = load_from_disk().unwrap_or(baked);
+    #[cfg(not(feature = "layout_editor"))]
+    let effective = baked;
 
-    // Always seed the data store with whatever's on disk. The atomic
-    // still gates whether overrides VISUALLY apply (instrument() short-
-    // circuits when off) — so loading the JSON when the editor is off
-    // is just preloading state for the eventual Alt+L toggle.
-    let loaded = load_from_disk().unwrap_or_default();
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(DATA_KEY), loaded));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(DATA_KEY), effective));
 
-    if on {
-        nih_plug::nih_log!(
-            "[layout_editor] active — Alt+L toggles, save writes to {}",
-            store_path().display()
-        );
+    #[cfg(feature = "layout_editor")]
+    {
+        let on = std::env::var("NINER_LAYOUT_EDITOR")
+            .map(|v| v != "0" && !v.is_empty())
+            .unwrap_or(false);
+        LAYOUT_EDITOR_ON.store(on, Ordering::Relaxed);
+        if on {
+            nih_plug::nih_log!(
+                "[layout_editor] active — Alt+L toggles, save writes to {}",
+                store_path().display()
+            );
+        }
+    }
+}
+
+fn parse_baked() -> LayoutOverrides {
+    match serde_json::from_slice::<LayoutOverrides>(BAKED_LAYOUT_JSON) {
+        Ok(v) => v,
+        Err(_) => LayoutOverrides::default(),
     }
 }
 
@@ -254,6 +292,7 @@ fn snap(value: f32, grid: f32) -> f32 {
     }
 }
 
+#[cfg(feature = "layout_editor")]
 fn frame_index(ctx: &egui::Context) -> u64 {
     // egui doesn't expose a monotonic frame counter via stable API, so we
     // bump our own each time `register` runs from a new repaint cycle.
@@ -263,6 +302,7 @@ fn frame_index(ctx: &egui::Context) -> u64 {
     ctx.input(|i| (i.time * 1000.0) as u64)
 }
 
+#[cfg(feature = "layout_editor")]
 fn registry_refresh(ctx: &egui::Context) -> ElementRegistry {
     let frame = frame_index(ctx);
     ctx.data_mut(|d| {
@@ -280,6 +320,7 @@ fn registry_refresh(ctx: &egui::Context) -> ElementRegistry {
     })
 }
 
+#[cfg(feature = "layout_editor")]
 fn registry_record(ctx: &egui::Context, key: &str, rect: egui::Rect) {
     let _ = registry_refresh(ctx);
     ctx.data_mut(|d| {
@@ -293,6 +334,7 @@ fn registry_record(ctx: &egui::Context, key: &str, rect: egui::Rect) {
     });
 }
 
+#[cfg(feature = "layout_editor")]
 fn registry_keys(ctx: &egui::Context) -> Vec<String> {
     ctx.data(|d| {
         d.get_temp::<ElementRegistry>(egui::Id::new(REGISTRY_KEY))
@@ -301,6 +343,7 @@ fn registry_keys(ctx: &egui::Context) -> Vec<String> {
     })
 }
 
+#[cfg(feature = "layout_editor")]
 fn registry_rect(ctx: &egui::Context, key: &str) -> Option<egui::Rect> {
     ctx.data(|d| {
         d.get_temp::<ElementRegistry>(egui::Id::new(REGISTRY_KEY))
@@ -336,39 +379,43 @@ pub fn instrument(ui: &mut egui::Ui, key: &'static str, base_rect: egui::Rect) -
     // When the editor is off we're done: no interact, no registry, no
     // overlay paint. Production builds pay only an `Arc<Data>` read +
     // a translate() per element.
-    if !LAYOUT_EDITOR_ON.load(Ordering::Relaxed) {
+    if !is_editor_on() {
         return visual_rect;
     }
 
-    // Record this element so the panel's registry list can find it.
-    registry_record(&ctx, key, visual_rect);
+    #[cfg(feature = "layout_editor")]
+    {
+        // Record this element so the panel's registry list can find it.
+        registry_record(&ctx, key, visual_rect);
 
-    // Interact on a foreground layer so the editor wins click + drag
-    // priority over the underlying widget (otherwise clicking PLAY,
-    // TEST, etc. would fire the button instead of selecting the
-    // element). When the editor is off this whole branch is skipped
-    // and the underlying widgets behave normally.
-    let resp = interact_on_overlay(
-        ui,
-        ("layout_edit", key),
-        visual_rect,
-        egui::Sense::click_and_drag(),
-    );
+        // Interact on a foreground layer so the editor wins click + drag
+        // priority over the underlying widget (otherwise clicking PLAY,
+        // TEST, etc. would fire the button instead of selecting the
+        // element).
+        let resp = interact_on_overlay(
+            ui,
+            ("layout_edit", key),
+            visual_rect,
+            egui::Sense::click_and_drag(),
+        );
 
-    apply_click_select(&ctx, key, &resp);
-    apply_drag(&ctx, key, &resp);
-    apply_right_click_reset(&ctx, key, &resp);
+        apply_click_select(&ctx, key, &resp);
+        apply_drag(&ctx, key, &resp);
+        apply_right_click_reset(&ctx, key, &resp);
 
-    let selected = is_selected(&ctx, key);
-    if resp.hovered() || resp.dragged() || selected {
-        paint_drag_overlay(&ctx, visual_rect, resp.dragged(), selected);
+        let selected = is_selected(&ctx, key);
+        if resp.hovered() || resp.dragged() || selected {
+            paint_drag_overlay(&ctx, visual_rect, resp.dragged(), selected);
+        }
     }
+    let _ = ui; // suppress unused warning when feature off
     visual_rect
 }
 
 /// Spawn a child Ui in the layout-editor overlay layer and run a single
 /// `interact()` on it. Clicks land here instead of the underlying
 /// widget because Foreground-order layers sit above the central panel.
+#[cfg(feature = "layout_editor")]
 fn interact_on_overlay(
     ui: &mut egui::Ui,
     id_salt: impl std::hash::Hash,
@@ -412,42 +459,49 @@ pub fn instrument_text(
     let visual_pos = base_pos
         + egui::vec2(snap(ov.pos_offset_x, grid), snap(ov.pos_offset_y, grid));
 
-    if !LAYOUT_EDITOR_ON.load(Ordering::Relaxed) {
+    if !is_editor_on() {
         return visual_pos;
     }
 
-    // Build the drag rect that surrounds the rendered text. align tells
-    // us where `visual_pos` sits relative to the glyph box.
-    let (ax, ay) = (align.x(), align.y());
-    let dx = match ax {
-        egui::Align::Min => 0.0,
-        egui::Align::Center => -approx_size.x * 0.5,
-        egui::Align::Max => -approx_size.x,
-    };
-    let dy = match ay {
-        egui::Align::Min => 0.0,
-        egui::Align::Center => -approx_size.y * 0.5,
-        egui::Align::Max => -approx_size.y,
-    };
-    let visual_rect = egui::Rect::from_min_size(
-        visual_pos + egui::vec2(dx, dy),
-        approx_size,
-    );
+    #[cfg(feature = "layout_editor")]
+    {
+        // Build the drag rect that surrounds the rendered text. align
+        // tells us where `visual_pos` sits relative to the glyph box.
+        let (ax, ay) = (align.x(), align.y());
+        let dx = match ax {
+            egui::Align::Min => 0.0,
+            egui::Align::Center => -approx_size.x * 0.5,
+            egui::Align::Max => -approx_size.x,
+        };
+        let dy = match ay {
+            egui::Align::Min => 0.0,
+            egui::Align::Center => -approx_size.y * 0.5,
+            egui::Align::Max => -approx_size.y,
+        };
+        let visual_rect = egui::Rect::from_min_size(
+            visual_pos + egui::vec2(dx, dy),
+            approx_size,
+        );
 
-    registry_record(&ctx, key, visual_rect);
+        registry_record(&ctx, key, visual_rect);
 
-    let resp = interact_on_overlay(
-        ui,
-        ("layout_edit", key),
-        visual_rect,
-        egui::Sense::click_and_drag(),
-    );
-    apply_click_select(&ctx, key, &resp);
-    apply_drag(&ctx, key, &resp);
-    apply_right_click_reset(&ctx, key, &resp);
-    let selected = is_selected(&ctx, key);
-    if resp.hovered() || resp.dragged() || selected {
-        paint_drag_overlay(&ctx, visual_rect, resp.dragged(), selected);
+        let resp = interact_on_overlay(
+            ui,
+            ("layout_edit", key),
+            visual_rect,
+            egui::Sense::click_and_drag(),
+        );
+        apply_click_select(&ctx, key, &resp);
+        apply_drag(&ctx, key, &resp);
+        apply_right_click_reset(&ctx, key, &resp);
+        let selected = is_selected(&ctx, key);
+        if resp.hovered() || resp.dragged() || selected {
+            paint_drag_overlay(&ctx, visual_rect, resp.dragged(), selected);
+        }
+    }
+    #[cfg(not(feature = "layout_editor"))]
+    {
+        let _ = (ui, approx_size, align);
     }
     visual_pos
 }
@@ -462,6 +516,7 @@ pub fn offset_for(ctx: &egui::Context, key: &str) -> egui::Vec2 {
     egui::vec2(snap(ov.pos_offset_x, grid), snap(ov.pos_offset_y, grid))
 }
 
+#[cfg(feature = "layout_editor")]
 fn apply_drag(ctx: &egui::Context, key: &str, resp: &egui::Response) {
     // On drag-start: if this element isn't already selected, replace the
     // selection with this one (or add to it if Shift is held). That way
@@ -513,6 +568,7 @@ fn apply_drag(ctx: &egui::Context, key: &str, resp: &egui::Response) {
 /// Click-without-drag selects. Shift toggles into existing selection,
 /// plain click replaces. Called before `apply_drag` so the drag handler
 /// can read the (possibly just-mutated) selection.
+#[cfg(feature = "layout_editor")]
 fn apply_click_select(ctx: &egui::Context, key: &str, resp: &egui::Response) {
     if !resp.clicked() {
         return;
@@ -531,6 +587,7 @@ fn apply_click_select(ctx: &egui::Context, key: &str, resp: &egui::Response) {
     set_selection(ctx, sel);
 }
 
+#[cfg(feature = "layout_editor")]
 fn apply_right_click_reset(ctx: &egui::Context, key: &str, resp: &egui::Response) {
     if !resp.secondary_clicked() {
         return;
@@ -569,6 +626,7 @@ pub fn override_for(ctx: &egui::Context, key: &str) -> OverrideEntry {
 /// outline + cyan handles so the user can tell at a glance which
 /// elements arrow-key nudge will move. Active-drag uses a brighter
 /// outline so they're distinguishable mid-gesture.
+#[cfg(feature = "layout_editor")]
 fn paint_drag_overlay(
     ctx: &egui::Context,
     rect: egui::Rect,
@@ -631,8 +689,9 @@ fn paint_drag_overlay(
 ///
 /// `typing` should be `ctx.wants_keyboard_input()` so an active TextEdit
 /// (preset rename) keeps its arrows.
+#[cfg(feature = "layout_editor")]
 pub fn handle_arrow_nudge(ctx: &egui::Context, typing: bool) {
-    if !LAYOUT_EDITOR_ON.load(Ordering::Relaxed) || typing {
+    if !is_editor_on() || typing {
         return;
     }
     let sel = get_selection(ctx);
@@ -743,10 +802,12 @@ pub fn handle_arrow_nudge(ctx: &egui::Context, typing: bool) {
     write_snapshot(ctx, snap_state);
 }
 
+#[cfg(feature = "layout_editor")]
 fn write_snapshot(ctx: &egui::Context, snap_state: LayoutOverrides) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(DATA_KEY), snap_state));
 }
 
+#[cfg(feature = "layout_editor")]
 fn load_from_disk() -> Option<LayoutOverrides> {
     let path = store_path();
     let text = std::fs::read_to_string(&path).ok()?;
@@ -763,6 +824,7 @@ fn load_from_disk() -> Option<LayoutOverrides> {
     }
 }
 
+#[cfg(feature = "layout_editor")]
 fn save_to_disk(snap_state: &LayoutOverrides) -> std::io::Result<()> {
     let path = store_path();
     if let Some(parent) = path.parent() {
@@ -779,6 +841,7 @@ fn save_to_disk(snap_state: &LayoutOverrides) -> std::io::Result<()> {
 /// Why not F12: egui-baseview's `translate_virtual_key` only handles
 /// arrow/escape/tab/character keys — F-keys never reach egui. Alt+L
 /// goes through the character-key path so it works under nih-plug.
+#[cfg(feature = "layout_editor")]
 pub fn handle_toggle(ctx: &egui::Context, typing: bool) {
     if typing {
         return;
@@ -821,8 +884,9 @@ pub fn handle_toggle(ctx: &egui::Context, typing: bool) {
 
 /// Render the bulk-adjust window if the editor is on. Call last in the
 /// frame so the window paints on top.
+#[cfg(feature = "layout_editor")]
 pub fn render_panel(ctx: &egui::Context) {
-    if !LAYOUT_EDITOR_ON.load(Ordering::Relaxed) {
+    if !is_editor_on() {
         return;
     }
     let mut snap_state = snapshot(ctx);

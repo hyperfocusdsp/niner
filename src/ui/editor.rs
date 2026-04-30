@@ -539,16 +539,21 @@ pub fn create(
                         sequencer.toggle_running();
                     }
 
-                    // F12 toggles the dev-only layout editor (no-op when
-                    // `NINER_LAYOUT_EDITOR` was unset at startup *and* the
-                    // user hasn't already turned it on this session).
-                    crate::ui::layout_overrides::handle_toggle(ctx, typing);
+                    // Alt+L toggles the dev-only layout editor (no-op
+                    // when `NINER_LAYOUT_EDITOR` was unset at startup
+                    // *and* the user hasn't already turned it on this
+                    // session). Compiled out unless `--features
+                    // layout_editor` is set.
+                    #[cfg(feature = "layout_editor")]
+                    {
+                        crate::ui::layout_overrides::handle_toggle(ctx, typing);
 
-                    // Arrow keys nudge selected elements when the editor
-                    // is on. Runs BEFORE preset_bar / tempo so consumed
-                    // events don't fire prev/next or BPM ±10. No-op when
-                    // selection is empty.
-                    crate::ui::layout_overrides::handle_arrow_nudge(ctx, typing);
+                        // Arrow keys nudge selected elements when the
+                        // editor is on. Runs BEFORE preset_bar / tempo
+                        // so consumed events don't fire prev/next or
+                        // BPM ±10. No-op when selection is empty.
+                        crate::ui::layout_overrides::handle_arrow_nudge(ctx, typing);
+                    }
 
                     // ===== Header preset bar =====
                     {
@@ -868,8 +873,10 @@ pub fn create(
                     }
                 });
 
-            // Dev-only layout editor — no-ops when off, otherwise paints
-            // the bulk-adjust window on top of the central panel.
+            // Dev-only layout editor — paints the bulk-adjust window on
+            // top of the central panel. Compiled out unless `--features
+            // layout_editor` is set.
+            #[cfg(feature = "layout_editor")]
             crate::ui::layout_overrides::render_panel(ctx);
         },
     )
