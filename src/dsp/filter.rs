@@ -272,6 +272,115 @@ mod tests {
         );
     }
 
+    /// Goertzel single-bin power for spectral assertions on biquad output.
+    fn fundamental_power(samples: &[f32], sr: f32, bin_freq: f32) -> f32 {
+        let w = std::f32::consts::TAU * bin_freq / sr;
+        let (mut re, mut im) = (0.0f32, 0.0f32);
+        for (i, &x) in samples.iter().enumerate() {
+            let p = w * i as f32;
+            re += x * p.cos();
+            im += x * p.sin();
+        }
+        re * re + im * im
+    }
+
+    fn render_sine(sr: f32, freq: f32, n: usize) -> Vec<f32> {
+        use std::f32::consts::TAU;
+        (0..n).map(|i| (TAU * freq * i as f32 / sr).sin()).collect()
+    }
+
+    /// Low shelf with positive gain MUST boost low-frequency content vs
+    /// high-frequency content. Drive a 60 Hz sine and a 4 kHz sine
+    /// through the same shelf and compare on-bin power ratios.
+    #[test]
+    fn low_shelf_boosts_lows_relative_to_highs() {
+        let sr = 48_000.0;
+        let mut f_low = BiquadFilter::new();
+        let mut f_high = BiquadFilter::new();
+        f_low.set_low_shelf(sr, 200.0, 6.0);
+        f_high.set_low_shelf(sr, 200.0, 6.0);
+
+        let lows = render_sine(sr, 60.0, 24_000);
+        let highs = render_sine(sr, 4000.0, 24_000);
+        let lows_out: Vec<f32> = lows.iter().map(|&x| f_low.process(x)).collect();
+        let highs_out: Vec<f32> = highs.iter().map(|&x| f_high.process(x)).collect();
+
+        let p_low_in = fundamental_power(&lows, sr, 60.0);
+        let p_low_out = fundamental_power(&lows_out, sr, 60.0);
+        let p_high_in = fundamental_power(&highs, sr, 4000.0);
+        let p_high_out = fundamental_power(&highs_out, sr, 4000.0);
+
+        let low_gain_db = 10.0 * (p_low_out / p_low_in).log10();
+        let high_gain_db = 10.0 * (p_high_out / p_high_in).log10();
+
+        // Low frequency should be boosted ~6 dB, highs ~unchanged.
+        assert!(low_gain_db > 4.0, "low_shelf+6dB at 60Hz: got {low_gain_db:.2} dB");
+        assert!(
+            high_gain_db.abs() < 1.0,
+            "low_shelf+6dB at 4kHz: should be ~0 dB, got {high_gain_db:.2}"
+        );
+    }
+
+    /// Mirror test for the high shelf.
+    #[test]
+    fn high_shelf_boosts_highs_relative_to_lows() {
+        let sr = 48_000.0;
+        let mut f_low = BiquadFilter::new();
+        let mut f_high = BiquadFilter::new();
+        f_low.set_high_shelf(sr, 2000.0, 6.0);
+        f_high.set_high_shelf(sr, 2000.0, 6.0);
+
+        let lows = render_sine(sr, 100.0, 24_000);
+        let highs = render_sine(sr, 8000.0, 24_000);
+        let lows_out: Vec<f32> = lows.iter().map(|&x| f_low.process(x)).collect();
+        let highs_out: Vec<f32> = highs.iter().map(|&x| f_high.process(x)).collect();
+
+        let p_low_in = fundamental_power(&lows, sr, 100.0);
+        let p_low_out = fundamental_power(&lows_out, sr, 100.0);
+        let p_high_in = fundamental_power(&highs, sr, 8000.0);
+        let p_high_out = fundamental_power(&highs_out, sr, 8000.0);
+
+        let low_gain_db = 10.0 * (p_low_out / p_low_in).log10();
+        let high_gain_db = 10.0 * (p_high_out / p_high_in).log10();
+
+        assert!(high_gain_db > 4.0, "high_shelf+6dB at 8kHz: got {high_gain_db:.2}");
+        assert!(
+            low_gain_db.abs() < 1.0,
+            "high_shelf+6dB at 100Hz: should be ~0 dB, got {low_gain_db:.2}"
+        );
+    }
+
+    /// Notch peaking filter at 250 Hz with -12 dB depth must attenuate a
+    /// 250 Hz sine far more than a 1 kHz sine.
+    #[test]
+    fn peaking_notch_attenuates_target_frequency() {
+        let sr = 48_000.0;
+        let freq = 250.0;
+        let mut f_target = BiquadFilter::new();
+        let mut f_other = BiquadFilter::new();
+        f_target.set_peaking(sr, freq, 4.0, -12.0);
+        f_other.set_peaking(sr, freq, 4.0, -12.0);
+
+        let target = render_sine(sr, freq, 24_000);
+        let other = render_sine(sr, 1000.0, 24_000);
+        let target_out: Vec<f32> = target.iter().map(|&x| f_target.process(x)).collect();
+        let other_out: Vec<f32> = other.iter().map(|&x| f_other.process(x)).collect();
+
+        let p_t_in = fundamental_power(&target, sr, freq);
+        let p_t_out = fundamental_power(&target_out, sr, freq);
+        let p_o_in = fundamental_power(&other, sr, 1000.0);
+        let p_o_out = fundamental_power(&other_out, sr, 1000.0);
+
+        let target_db = 10.0 * (p_t_out / p_t_in).log10();
+        let other_db = 10.0 * (p_o_out / p_o_in).log10();
+
+        assert!(target_db < -6.0, "notch should cut 250Hz, got {target_db:.2}");
+        assert!(
+            other_db.abs() < 1.0,
+            "notch off-band 1kHz should be ~0 dB, got {other_db:.2}"
+        );
+    }
+
     /// Repeated `update` calls with identical inputs must NOT reset the
     /// biquad state — that would discard the IIR memory and click. The
     /// dirty-check should early-exit and leave state alone.

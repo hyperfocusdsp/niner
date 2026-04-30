@@ -69,6 +69,64 @@ mod tests {
         }
     }
 
+    /// At `color=1.0` the LP cutoff is well above audio range, so the
+    /// output approximates white noise — energy in a high-frequency band
+    /// (e.g. 4–8 kHz) should be comparable to energy in a low-frequency
+    /// band (250–500 Hz). At `color=0.0` the cutoff drops to 20 Hz, so
+    /// the high band should be sharply attenuated.
+    #[test]
+    fn dark_attenuates_high_band_relative_to_white() {
+        use std::f32::consts::TAU;
+
+        fn band_power(samples: &[f32], sr: f32, freqs: &[f32]) -> f32 {
+            let mut total = 0.0;
+            for &f in freqs {
+                let w = TAU * f / sr;
+                let (mut re, mut im) = (0.0f32, 0.0f32);
+                for (i, &x) in samples.iter().enumerate() {
+                    let p = w * i as f32;
+                    re += x * p.cos();
+                    im += x * p.sin();
+                }
+                total += re * re + im * im;
+            }
+            total
+        }
+
+        let sr = 48_000.0;
+        let n = 24_000;
+        let mut ng_white = NoiseGen::new(sr);
+        let mut ng_dark = NoiseGen::new(sr);
+        ng_white.trigger();
+        ng_dark.trigger();
+        let white: Vec<f32> = (0..n).map(|_| ng_white.tick(1.0)).collect();
+        let dark: Vec<f32> = (0..n).map(|_| ng_dark.tick(0.0)).collect();
+
+        let high_bins = [4000.0, 5000.0, 6000.0, 7000.0, 8000.0];
+        let low_bins = [250.0, 350.0, 500.0];
+
+        let p_white_high = band_power(&white, sr, &high_bins);
+        let p_dark_high = band_power(&dark, sr, &high_bins);
+        let p_white_low = band_power(&white, sr, &low_bins);
+        let p_dark_low = band_power(&dark, sr, &low_bins);
+
+        // White: high vs low ratios should be within ~10x (broadly flat).
+        let white_ratio = p_white_high / p_white_low;
+        assert!(
+            white_ratio > 0.05 && white_ratio < 20.0,
+            "white-noise high/low ratio = {white_ratio:.2}, expected near 1.0"
+        );
+
+        // Dark: high band should be heavily attenuated relative to white.
+        // 100x is a generous lower bound — a properly-cut LP at 20 Hz
+        // should knock the 4-8 kHz band ~50+ dB below white.
+        let high_attenuation = p_white_high / p_dark_high;
+        assert!(
+            high_attenuation > 100.0,
+            "dark vs white high-band attenuation = {high_attenuation:.2}x, expected > 100x"
+        );
+    }
+
     #[test]
     fn white_has_more_energy_than_dark() {
         let mut ng_white = NoiseGen::new(44100.0);

@@ -204,3 +204,93 @@ impl Default for Sequencer {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make() -> Sequencer {
+        Sequencer::default()
+    }
+
+    #[test]
+    fn default_pattern_is_four_on_the_floor() {
+        let seq = make();
+        for i in 0..STEPS {
+            let want = matches!(i, 0 | 4 | 8 | 12);
+            assert_eq!(seq.is_step_on(i), want, "step {i} default");
+        }
+    }
+
+    #[test]
+    fn set_step_writes_atomically_and_to_mirror() {
+        let persist = Arc::new(Mutex::new(0u16));
+        let accent = Arc::new(Mutex::new(0u16));
+        let seq = Sequencer::new(persist.clone(), accent);
+        seq.set_step(5, true);
+        assert!(seq.is_step_on(5));
+        assert_eq!(*persist.lock(), 1u16 << 5);
+        seq.set_step(5, false);
+        assert!(!seq.is_step_on(5));
+        assert_eq!(*persist.lock(), 0);
+    }
+
+    #[test]
+    fn toggle_accent_no_op_when_step_off() {
+        // Accents only have meaning on a fired step. toggle_accent on an
+        // off step must NOT flip the bit — otherwise we'd accumulate
+        // accent state with no visible step, then surprise the user when
+        // they re-enable that step later.
+        let persist = Arc::new(Mutex::new(0u16));
+        let accent = Arc::new(Mutex::new(0u16));
+        let seq = Sequencer::new(persist, accent.clone());
+        assert!(!seq.is_step_on(3));
+        seq.toggle_accent(3);
+        assert!(!seq.is_step_accented(3));
+        assert_eq!(*accent.lock(), 0);
+    }
+
+    #[test]
+    fn toggle_accent_flips_when_step_on() {
+        let seq = make();
+        seq.set_step(7, true);
+        assert!(!seq.is_step_accented(7));
+        seq.toggle_accent(7);
+        assert!(seq.is_step_accented(7));
+        seq.toggle_accent(7);
+        assert!(!seq.is_step_accented(7));
+    }
+
+    #[test]
+    fn bpm_is_clamped_to_supported_range() {
+        let seq = make();
+        seq.set_bpm(0.0);
+        assert!((seq.bpm() - MIN_BPM).abs() < 1e-3);
+        seq.set_bpm(1000.0);
+        assert!((seq.bpm() - MAX_BPM).abs() < 1e-3);
+        seq.set_bpm(140.5);
+        assert!((seq.bpm() - 140.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn toggle_running_flips_flag() {
+        let seq = make();
+        assert!(!seq.is_running());
+        seq.toggle_running();
+        assert!(seq.is_running());
+        seq.toggle_running();
+        assert!(!seq.is_running());
+    }
+
+    #[test]
+    fn display_bpm_is_independent_of_internal_bpm() {
+        // host_synced mode writes display_bpm to the host tempo while
+        // standalone mode writes to internal bpm — the two paths must
+        // not stomp each other.
+        let seq = make();
+        seq.set_bpm(100.0);
+        seq.set_display_bpm(160.0);
+        assert!((seq.bpm() - 100.0).abs() < 1e-3);
+        assert!((seq.display_bpm() - 160.0).abs() < 1e-3);
+    }
+}
