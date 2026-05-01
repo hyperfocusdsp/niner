@@ -77,9 +77,12 @@ pub struct Niner {
     seq_sample_counter: u64,
     /// Audio-thread-owned current step index (mirrored to `sequencer.current_step`).
     seq_current_step: usize,
-    /// True once transport.playing has ever reported false — used to distinguish
-    /// a real DAW (which stops/starts) from a standalone backend (which always
-    /// reports playing=true).
+    /// True once transport.playing has ever reported true. Used as a
+    /// prerequisite for host_ever_stopped so a standalone backend that starts
+    /// with playing=false doesn't falsely trigger DAW mode.
+    host_ever_played: bool,
+    /// True once transport.playing has toggled false after having been true —
+    /// the signature of a real DAW host (standalone never toggles back).
     host_ever_stopped: bool,
     /// Last step index fired in host-sync mode, for edge detection across buffers.
     last_host_step: Option<usize>,
@@ -115,6 +118,7 @@ impl Default for Niner {
             sequencer,
             seq_sample_counter: 0,
             seq_current_step: 0,
+            host_ever_played: false,
             host_ever_stopped: false,
             last_host_step: None,
             seq_running_prev: false,
@@ -230,7 +234,9 @@ impl Plugin for Niner {
         // playing=true; real DAW hosts toggle transport on/off. Track whether
         // we've ever seen !playing to distinguish the two cases.
         let transport = context.transport();
-        if !transport.playing {
+        if transport.playing {
+            self.host_ever_played = true;
+        } else if self.host_ever_played {
             self.host_ever_stopped = true;
         }
         let is_daw = self.host_ever_stopped;

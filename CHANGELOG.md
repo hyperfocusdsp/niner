@@ -2,6 +2,83 @@
 
 All notable changes to Niner (formerly Slammer) are documented here.
 
+## [0.7.1] — 2026-05-01
+
+### UI
+
+- **OUTPUT display redesigned.** Lit area now ends at a controlled boundary
+  inside the master row instead of stretching across the full panel.
+  DECAY/DRIFT/VOL and AMT/RCT/DRV sit on the chassis surface, not on
+  the display. Display width is also resizable per-instance via the
+  layout editor's corner-drag handle.
+- **GR meter is now in-display, in red.** "GR" label aligned with the BPM
+  text on the lit area; tick marks at every 3 dB (0/3/6/9/12/15) instead
+  of just 0/6/12. Numbers in `RED_LED` to match the LED look.
+- **BPM text is independently movable** from the OUTPUT display. Standalone
+  no longer falsely reports `HOST` mode — fixed a transport-detection edge
+  case where one PipeWire/JACK buffer with `playing=false` at startup
+  would lock the standalone into DAW-sync mode.
+- **Header chrome on one line.** "UI 1× · KICK SYNTHESIZER · v0.7.1" all
+  share the header centre line and pack tightly behind the TEST button.
+  Each text element is independently draggable in the layout editor.
+- **SAT-section selectors widened** from 44 → 68 px so labels like
+  "dIOdE" and "tAnH" fit with breathing room. LCD lit area uses tighter
+  insets so the dark background height matches the adjacent arrow buttons.
+  L/R arrow glyphs swapped to the slimmer ◂ ▸ variants matching the
+  preset bar, sized at 12 pt.
+- **Status chips unified.** COMP, LIM, PRECISE, CLAP, POST all render at
+  the same 8 pt monospace, all draggable in the layout editor, all use
+  the same `LABEL ●` ordering (label first, LED right).
+- **Compact-knob layout** for AMT/RCT/DRV, ATK/REL/KNE, LVL/FREQ/TAIL —
+  matches the SAT-row knob density (DRV/MIX/CDRV/NDEC/ACC).
+
+### Layout editor
+
+- **Corner-drag resize** for any selected instrumented element. Drag the
+  bright-green handle at the bottom-right corner; `size_scale` clamped to
+  0.2..=5.0. `OverrideEntry::size_scale` already existed in the schema —
+  this release wires it into `instrument()` and the corner overlay.
+- **All header text elements** now `instrument_text`'d (KICK SYNTHESIZER,
+  v0.7.1, UI 1×).
+- **Independent move** for the GR section, BPM, COMP/LIM/PRECISE/CLAP/POST
+  chips, and master.output_display.
+
+### Hardware-look chassis
+
+- **Hex-socket Allen bolts** replace the small round screws. Each corner
+  has a distinct fixed rotation angle so no two screws look perfectly
+  aligned. Drawn procedurally over the chassis bake (matte cap, recessed
+  hex socket with depth shading, light specular). Each screw is movable
+  and resizable in the layout editor.
+- **Chassis re-baked without screws** so the procedural hex bolts are the
+  only screw rendering — no phantom circles peeking out from under the
+  caps. Old `screws.png` overlay path retained but unused at default.
+
+### Engine / persistence (refactor work since v0.7.0)
+
+This release also carries the deep refactor work from late April:
+
+- **Layout editor gated behind `layout_editor` Cargo feature** (default
+  off) — production `libniner.so` is ~280 KB smaller. `assets/baked_layout.json`
+  + `include_bytes!` shim ships the locked layout in default builds.
+- **Test gap closure**: 149 → 179 tests (+30, +20%). New coverage for
+  sequencer, oscillator (Goertzel-based fundamental measurement), filter
+  shelves + notch, noise spectrum.
+- **RT performance**: `KickParams` cached once per buffer (was 4×),
+  `MasterEq::update` dirty-checked, `WaveformDisplay::push` O(n) → O(1)
+  ring buffer, `KickEngine::steal_voice` extracted as a helper.
+- **CI workflow** added: build + smoke + clippy hygiene gate on every push.
+- **Dev hygiene**: dropped the `spectrum_disabled` debug flag, test WAV
+  dumps now route through `std::env::temp_dir()`.
+
+### Internals
+
+- `MasterRow::draw()` restructured so `instrument()` calls land before the
+  stored painter borrow — enables the GR section, LIM chip, and display
+  resize handle without `&mut ui` borrow conflicts.
+- `draw_chrome` signature changed from `&Ui` to `&mut Ui` to support
+  layout-editor wrapping of header text.
+
 ## [0.7.0] — 2026-04-26
 
 ### Renamed: Slammer → Niner

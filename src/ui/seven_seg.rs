@@ -191,7 +191,7 @@ pub fn lcd_selector(
     let arrow_sq = crate::ui::layout_overrides::chrome_sq(ui.ctx());
     let chrome_h = crate::ui::layout_overrides::chrome_height(ui.ctx());
     let (btn_w, btn_h, lcd_width, lcd_height, trailing_pad) = if compact {
-        (arrow_sq, chrome_h, 44.0, chrome_h, 0.0)
+        (arrow_sq, chrome_h, 68.0, chrome_h, 0.0)
     } else {
         (arrow_sq, chrome_h, 56.0, chrome_h, 8.0)
     };
@@ -212,7 +212,7 @@ pub fn lcd_selector(
                 0.06,
             );
             let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 2.0);
-            draw_lcd_arrow(ui.painter(), left_rect, "\u{25C0}", press_amount, r);
+            draw_lcd_arrow(ui.painter(), left_rect, "\u{25C2}", press_amount, r);
         }
         if left_resp.clicked() && !modes.is_empty() {
             let next = if current == 0 {
@@ -229,6 +229,20 @@ pub fn lcd_selector(
         if ui.is_rect_visible(lcd_rect) {
             let baked = DISPLAY_BAKED.load(std::sync::atomic::Ordering::Relaxed);
             let painter = ui.painter();
+            // Compact displays use tighter vertical insets so the lit area
+            // fills most of the allocated height and aligns visually with the
+            // adjacent arrow buttons.
+            let insets = if compact {
+                DisplayInsets {
+                    frame: 2.0,
+                    content_left: 4.0,
+                    content_top: 1.0,
+                    content_bottom: 1.0,
+                    content_right: 4.0,
+                }
+            } else {
+                DisplayInsets::DEFAULT
+            };
             if baked {
                 draw_inset_display_no_glass(
                     painter,
@@ -236,7 +250,7 @@ pub fn lcd_selector(
                     lcd_rect.top(),
                     lcd_width,
                     lcd_height,
-                    DisplayInsets::DEFAULT,
+                    insets,
                 );
             } else {
                 draw_inset_display(
@@ -248,16 +262,11 @@ pub fn lcd_selector(
                 );
             }
             let mode_name = modes.get(current).copied().unwrap_or("");
-            draw_7seg_text(painter, lcd_rect, mode_name);
+            let text_rect = insets.lit_rect(lcd_rect.left(), lcd_rect.top(), lcd_width, lcd_height);
+            draw_7seg_text(painter, text_rect, mode_name);
             if baked {
                 if let Some(handle) = display_reflection_handle(ui.ctx()) {
-                    let lit = DisplayInsets::DEFAULT.lit_rect(
-                        lcd_rect.left(),
-                        lcd_rect.top(),
-                        lcd_width,
-                        lcd_height,
-                    );
-                    paint_display_reflection(painter, lit, &handle);
+                    paint_display_reflection(painter, text_rect, &handle);
                 }
             }
         }
@@ -275,7 +284,7 @@ pub fn lcd_selector(
                 0.06,
             );
             let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 2.0);
-            draw_lcd_arrow(ui.painter(), right_rect, "\u{25B6}", press_amount, r);
+            draw_lcd_arrow(ui.painter(), right_rect, "\u{25B8}", press_amount, r);
         }
         if right_resp.clicked() && !modes.is_empty() {
             let next = if current + 1 >= modes.len() {
@@ -307,7 +316,7 @@ fn draw_lcd_arrow(
         rect.center() + egui::vec2(0.0, text_offset),
         egui::Align2::CENTER_CENTER,
         glyph,
-        egui::FontId::new(11.0, egui::FontFamily::Monospace),
+        egui::FontId::new(12.0, egui::FontFamily::Monospace),
         theme::BTN_TEXT,
     );
 }

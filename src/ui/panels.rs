@@ -79,7 +79,7 @@ fn set_display_mode(ctx: &egui::Context, mode: DisplayMode) {
 /// `chassis.is_none()`. When `None` (texture failed to decode/load), the
 /// full procedural fallback runs unchanged.
 pub fn draw_chrome(
-    ui: &egui::Ui,
+    ui: &mut egui::Ui,
     panel_rect: egui::Rect,
     chassis: Option<&egui::TextureHandle>,
     screws: Option<&egui::TextureHandle>,
@@ -89,6 +89,45 @@ pub fn draw_chrome(
     // Sit the header strip below the recessed top edge band (y < 12) so it's
     // fully on the panel surface and clears the OUTPUT/COMP bezel tops at y=38.
     let header_center_y = panel_rect.top() + 23.0;
+
+    // Precompute instrument_text positions before the painter borrow.
+    let test_right = panel_rect.left()
+        + CONTENT_LEFT
+        + 111.0
+        + 40.0
+        + crate::ui::layout_overrides::offset_for(ui.ctx(), "header.test_btn").x;
+    let kick_pos = crate::ui::layout_overrides::instrument_text(
+        ui,
+        "header.kick_synthesizer",
+        egui::pos2(test_right + 66.0, header_center_y),
+        egui::vec2(120.0, 12.0),
+        egui::Align2::LEFT_CENTER,
+    );
+    let ver_pos = crate::ui::layout_overrides::instrument_text(
+        ui,
+        "header.version",
+        egui::pos2(test_right + 162.0, header_center_y),
+        egui::vec2(50.0, 12.0),
+        egui::Align2::LEFT_CENTER,
+    );
+
+    // Pre-fetch screw offsets (read-only) before the painter borrow.
+    // Base angles give each corner a distinct realistic rotation.
+    const SCREW_BASE_ANGLES: [f32; 4] = [0.30, 1.05, 0.68, 1.82]; // TL TR BL BR
+    const SCREW_R: f32 = 7.9; // sized to cover the baked circle + match user's BL resize
+    let screw_bases = [
+        (panel_rect.left() + 8.0, panel_rect.top() + 18.0),
+        (panel_rect.right() - 8.0, panel_rect.top() + 18.0),
+        (panel_rect.left() + 8.0, panel_rect.bottom() - 18.0),
+        (panel_rect.right() - 8.0, panel_rect.bottom() - 18.0),
+    ];
+    let screw_keys = ["screw.tl", "screw.tr", "screw.bl", "screw.br"];
+    let screw_offsets: [egui::Vec2; 4] = std::array::from_fn(|i| {
+        crate::ui::layout_overrides::offset_for(ui.ctx(), screw_keys[i])
+    });
+    let screw_scales: [f32; 4] = std::array::from_fn(|i| {
+        crate::ui::layout_overrides::override_for(ui.ctx(), screw_keys[i]).size_scale
+    });
 
     let painter = ui.painter();
     if let Some(t) = chassis {
@@ -146,23 +185,49 @@ pub fn draw_chrome(
         }
     }
 
+    // Draw hex screws on top of chassis (always, regardless of bake state).
+    for i in 0..4 {
+        let (bx, by) = screw_bases[i];
+        let off = screw_offsets[i];
+        let scale = screw_scales[i];
+        crate::ui::widgets::draw_hex_screw(
+            painter,
+            bx + off.x,
+            by + off.y,
+            SCREW_R * scale,
+            SCREW_BASE_ANGLES[i],
+        );
+    }
+
     painter.text(
-        egui::pos2(panel_rect.right() - CONTENT_LEFT, header_center_y - 2.0),
-        egui::Align2::RIGHT_CENTER,
+        kick_pos,
+        egui::Align2::LEFT_CENTER,
         "KICK SYNTHESIZER",
         egui::FontId::new(8.0, egui::FontFamily::Monospace),
         theme::TEXT_DIM,
     );
     painter.text(
-        egui::pos2(panel_rect.right() - CONTENT_LEFT, header_center_y + 8.0),
-        egui::Align2::RIGHT_CENTER,
+        ver_pos,
+        egui::Align2::LEFT_CENTER,
         format!("v{}", env!("CARGO_PKG_VERSION")),
         egui::FontId::new(8.0, egui::FontFamily::Monospace),
-        egui::Color32::from_rgb(0x44, 0x44, 0x44),
+        theme::TEXT_DIM,
     );
-    // Note: header subtitle / version aren't instrument()'d — `ui` isn't
-    // mutable in this signature and rewiring `&Ui` to `&mut Ui` for an
-    // edit-only path would change every caller.
+    // Register screw instruments AFTER painter is last used (NLL: borrow ends here).
+    // Registering after the chassis/procedural content ensures screws are on top
+    // of everything in the Foreground hit-test layer.
+    for i in 0..4 {
+        let (bx, by) = screw_bases[i];
+        let off = screw_offsets[i];
+        let scale = screw_scales[i];
+        let base_rect = egui::Rect::from_center_size(
+            egui::pos2(bx, by),
+            egui::vec2(SCREW_R * 2.0 * scale, SCREW_R * 2.0 * scale),
+        );
+        let _ = crate::ui::layout_overrides::instrument(ui, screw_keys[i], base_rect)
+            .translate(off); // instrument already applies offset internally
+        let _ = off; // suppress unused warning
+    }
     header_center_y
 }
 
@@ -265,6 +330,13 @@ impl<'a> MasterRow<'a> {
         let master_y = self.master_y + display_dy;
         let wf_width = self.wf_width;
         let wf_height = self.wf_height;
+        // Visual display width. Base = midpoint between previous attempts.
+        // size_scale from the layout editor's corner-drag resize is applied so
+        // the user can widen/narrow the display live.
+        let display_scale = crate::ui::layout_overrides::override_for(
+            ui.ctx(), "master.output_display",
+        ).size_scale;
+        let display_paint_w = (wf_width - 6.0) * display_scale;
         let toggle_resp = ui
             .interact(
                 display_rect,
@@ -277,14 +349,41 @@ impl<'a> MasterRow<'a> {
             set_display_mode(ui.ctx(), self.display_mode.toggled());
         }
 
+        // Compute lit early so instrument() can borrow ui mutably before the
+        // painter immutable borrow is taken. Uses display_paint_w so lit
+        // extends to the DECAY knob right edge while knobs_x is unchanged.
+        let lit = lit_rect_default(wf_left, master_y, display_paint_w, wf_height);
+        // GR section independent instrument — must be before painter borrow.
+        let gr_base_rect = egui::Rect::from_min_size(
+            egui::pos2(lit.left(), lit.top() + 2.0),
+            egui::vec2(lit.width(), 11.0),
+        );
+        let gr_instrumented =
+            crate::ui::layout_overrides::instrument(ui, "master.gr_section", gr_base_rect);
+        let gr_dx = gr_instrumented.left() - gr_base_rect.left();
+        let gr_dy = gr_instrumented.top() - gr_base_rect.top();
+
+        // LIM chip base rect computed before painter. The interact is registered
+        // AFTER master.comp_macro (below) so it wins Foreground click priority.
+        // offset_for() (read-only) gives us the saved offset for drawing.
+        let lim_base_rect = {
+            let kx = wf_left + wf_width + 16.0;
+            let sx = kx + KNOB_SPACING * 3.0 + 4.0;
+            let sw = (panel_rect.right() - CONTENT_LEFT - sx).max(0.0);
+            let comp_lit = crate::ui::widgets::lit_rect_default(sx + 2.0, master_y, sw - 4.0, wf_height);
+            let base_cx = panel_rect.right() - CONTENT_LEFT - 4.0;
+            let base_cy = comp_lit.top() + 4.0;
+            egui::Rect::from_center_size(egui::pos2(base_cx, base_cy), egui::vec2(34.0, 12.0))
+        };
+        let lim_off = crate::ui::layout_overrides::offset_for(ui.ctx(), "master.lim_chip");
+
         let painter = ui.painter();
-        // Full-width dark background so the display surface extends
-        // border-to-border, covering the master knob and COMP areas.
-        let full_display_w = panel_rect.right() - CONTENT_LEFT - wf_left;
+        // Display background ends at the DECAY knob right edge (display_paint_w).
+        // DECAY/DRIFT/VOL and AMT/RCT/DRV sit on the chassis, not the display.
         painter.rect_filled(
             egui::Rect::from_min_size(
                 egui::pos2(wf_left, master_y),
-                egui::vec2(full_display_w, wf_height),
+                egui::vec2(display_paint_w, wf_height),
             ),
             3.0,
             theme::BG_DISPLAY,
@@ -296,11 +395,10 @@ impl<'a> MasterRow<'a> {
             painter,
             wf_left,
             master_y,
-            wf_width,
+            display_paint_w,
             wf_height,
             crate::ui::widgets::DisplayInsets::DEFAULT,
         );
-        let lit = lit_rect_default(wf_left, master_y, wf_width, wf_height);
         let mode_label = match self.display_mode {
             DisplayMode::Waveform => "OUTPUT",
             DisplayMode::Spectrum => "SPECTRUM",
@@ -397,14 +495,27 @@ impl<'a> MasterRow<'a> {
         // ── Gain-reduction overlay bar ──
         // Painted along the top of the lit rect, just under the mode
         // label. Fills right-to-left, 0..18 dB of reduction maps to 0..full
-        // width.
+        // width. gr_dx/gr_dy come from the instrument() call above the
+        // painter borrow, so the GR section moves independently.
         {
             let gr_max_db = 18.0f32;
             let gr_norm = (self.gr_db / gr_max_db).clamp(0.0, 1.0);
-            let bar_x = lit.left() + 32.0; // clear the mode label
-            let bar_y = lit.top() + 2.0;
-            let bar_w_total = lit.right() - bar_x - 2.0;
+            // "GR" label left-aligned with BPM text (lit.left() + 2).
+            let gr_label_x = lit.left() + 2.0 + gr_dx;
+            let bar_x_base = lit.left() + 14.0; // bar starts just right of "GR"
+            let bar_y_base = lit.top() + 2.0;
+            let bar_w_total = lit.right() - bar_x_base - 2.0;
             let bar_h = 3.0;
+            let bar_x = bar_x_base + gr_dx;
+            let bar_y = lit.top() + 2.0 + gr_dy;
+            // "GR" left-aligned with BPM, vertically centred on bar.
+            painter.text(
+                egui::pos2(gr_label_x, bar_y + bar_h * 0.5),
+                egui::Align2::LEFT_CENTER,
+                "GR",
+                egui::FontId::new(6.0, egui::FontFamily::Monospace),
+                theme::RED_LED,
+            );
             // Housing (dim red, full width).
             painter.rect_filled(
                 egui::Rect::from_min_size(egui::pos2(bar_x, bar_y), egui::vec2(bar_w_total, bar_h)),
@@ -428,27 +539,21 @@ impl<'a> MasterRow<'a> {
                     fill_color,
                 );
             }
-            // Tick labels: 0 / 6 / 12 dB, right-aligned.
+            // Tick marks + labels every 3 dB. Major ticks (multiples of 6)
+            // get a number; minor ticks (3, 9, 15) get a short tick line only.
             let label_y = bar_y + bar_h + 1.0;
             let label_font = egui::FontId::new(6.0, egui::FontFamily::Monospace);
-            for (db, label) in &[(0.0f32, "0"), (6.0, "6"), (12.0, "12")] {
+            for db in [0.0f32, 3.0, 6.0, 9.0, 12.0, 15.0] {
                 let frac = db / gr_max_db;
                 let lx = bar_x + bar_w_total - frac * bar_w_total;
                 painter.text(
                     egui::pos2(lx, label_y),
                     egui::Align2::CENTER_TOP,
-                    label,
+                    format!("{}", db as i32),
                     label_font.clone(),
-                    theme::TEXT_DIM,
+                    theme::RED_LED,
                 );
             }
-            painter.text(
-                egui::pos2(bar_x - 2.0, bar_y + bar_h * 0.5),
-                egui::Align2::RIGHT_CENTER,
-                "GR",
-                egui::FontId::new(6.0, egui::FontFamily::Monospace),
-                theme::TEXT_DIM,
-            );
         }
         // Knob value readout — rendered via a temp data slot set by knob.rs.
         // Anchored to the lit rect's bottom-right so it sits inside the
@@ -457,7 +562,7 @@ impl<'a> MasterRow<'a> {
             ui.ctx().data(|d| d.get_temp(egui::Id::new("knob_display")));
         if let Some(text) = knob_text {
             let readout_rect = egui::Rect::from_min_size(
-                egui::pos2(lit.right() - 160.0, lit.bottom() - 16.0),
+                egui::pos2(lit.right() - 158.0, lit.bottom() - 16.0),
                 egui::vec2(156.0, 14.0),
             );
             crate::ui::seven_seg::draw_7seg_text(ui.painter(), readout_rect, &text);
@@ -465,7 +570,9 @@ impl<'a> MasterRow<'a> {
 
         // Master knobs strip to the right of the display
         let knob_row_y = master_y + 4.0;
-        let knobs_x = wf_left + wf_width + 16.0;
+        // Use self.wf_left (base, pre-instrument) so knobs stay fixed when the
+        // display is resized or moved via the layout editor.
+        let knobs_x = self.wf_left + wf_width + 16.0;
         let master_knob_rect = egui::Rect::from_min_size(
             egui::pos2(knobs_x, knob_row_y),
             egui::vec2(KNOB_SPACING * 3.0, KNOB_SIZE + 30.0),
@@ -537,25 +644,33 @@ impl<'a> MasterRow<'a> {
             let strip_w = (strip_right - strip_x).max(0.0);
             if strip_w >= 80.0 {
                 let comp_lit = lit_rect_default(strip_x + 2.0, master_y, strip_w - 4.0, wf_height);
-                ui.painter().text(
-                    egui::pos2(comp_lit.left() + 2.0, comp_lit.top() + 1.0),
-                    egui::Align2::LEFT_TOP,
-                    "COMP",
-                    egui::FontId::new(6.0, egui::FontFamily::Monospace),
-                    theme::RED_GHOST,
-                );
-
-                // LIM toggle — small LED + label, painted in the top-right
-                // corner of the lit rect. Clickable via ui.interact().
-                let lim_cx = comp_lit.right() - 8.0;
-                let lim_cy = comp_lit.top() + 4.0;
+                // LIM toggle — positioned at the right of the comp strip
+                // (≈ DRV right edge). lim_off comes from the instrument()
+                // call before the painter borrow so the chip is draggable.
+                let lim_cx = lim_base_rect.center().x + lim_off.x;
+                let lim_cy = lim_base_rect.center().y + lim_off.y;
                 let lim_on = params.comp_limit_on.value();
+                // COMP label — same font/size as LIM/CLAP/POST, movable.
+                let comp_label_pos = crate::ui::layout_overrides::instrument_text(
+                    ui,
+                    "master.comp_label",
+                    egui::pos2(comp_lit.left() + 2.0, lim_cy),
+                    egui::vec2(40.0, 12.0),
+                    egui::Align2::LEFT_CENTER,
+                );
+                ui.painter().text(
+                    comp_label_pos,
+                    egui::Align2::LEFT_CENTER,
+                    "COMP",
+                    egui::FontId::new(8.0, egui::FontFamily::Monospace),
+                    theme::TEXT_DIM,
+                );
                 draw_led(ui.painter(), lim_cx, lim_cy, lim_on);
                 ui.painter().text(
                     egui::pos2(lim_cx - 7.0, lim_cy),
                     egui::Align2::RIGHT_CENTER,
                     "LIM",
-                    egui::FontId::new(7.0, egui::FontFamily::Monospace),
+                    egui::FontId::new(8.0, egui::FontFamily::Monospace),
                     if lim_on {
                         theme::WHITE
                     } else {
@@ -595,11 +710,12 @@ impl<'a> MasterRow<'a> {
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(comp_rect), |ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     ui.horizontal(|ui| {
-                        param_knob(
+                        param_knob_compact(
                             ui,
                             setter,
                             "comp_amt",
                             "AMT",
+                            "",
                             &params.comp_amount,
                             0.0,
                             1.0,
@@ -614,11 +730,12 @@ impl<'a> MasterRow<'a> {
                         // so the precision knobs follow along. Dragging
                         // ATK or REL individually leaves RCT stale —
                         // that's the intended break-out behavior.
-                        let rct_changed = param_knob(
+                        let rct_changed = param_knob_compact(
                             ui,
                             setter,
                             "comp_rct",
                             "RCT",
+                            "",
                             &params.comp_react,
                             0.0,
                             1.0,
@@ -638,11 +755,12 @@ impl<'a> MasterRow<'a> {
                             setter.set_parameter(&params.comp_rel_ms, rel_ms);
                             setter.end_set_parameter(&params.comp_rel_ms);
                         }
-                        param_knob(
+                        param_knob_compact(
                             ui,
                             setter,
                             "comp_drv",
                             "DRV",
+                            "",
                             &params.comp_drive,
                             0.0,
                             1.0,
@@ -655,6 +773,9 @@ impl<'a> MasterRow<'a> {
                 });
             }
         }
+        // Register LIM interact AFTER comp_macro so it wins Foreground priority.
+        // Painter is no longer live here so &mut ui is available.
+        crate::ui::layout_overrides::instrument(ui, "master.lim_chip", lim_base_rect);
     }
 }
 
@@ -867,11 +988,12 @@ pub fn draw_sub_top_row(
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             ui.horizontal(|ui| {
-                param_knob(
+                param_knob_compact(
                     ui,
                     setter,
                     "comp_atk",
                     "ATK",
+                    "",
                     &params.comp_atk_ms,
                     0.3,
                     50.0,
@@ -886,11 +1008,12 @@ pub fn draw_sub_top_row(
                     small_knob,
                     theme::KNOB_METAL,
                 );
-                param_knob(
+                param_knob_compact(
                     ui,
                     setter,
                     "comp_rel",
                     "REL",
+                    "",
                     &params.comp_rel_ms,
                     20.0,
                     800.0,
@@ -899,11 +1022,12 @@ pub fn draw_sub_top_row(
                     small_knob,
                     theme::KNOB_METAL,
                 );
-                param_knob(
+                param_knob_compact(
                     ui,
                     setter,
                     "comp_kne",
                     "KNE",
+                    "",
                     &params.comp_knee_db,
                     0.0,
                     12.0,
@@ -915,14 +1039,20 @@ pub fn draw_sub_top_row(
             });
         });
 
-        // Group caption BELOW the cluster so small-knob centers align with
-        // the big TOP-row knob centers rather than being offset by a heading.
+        // PRECISE label — 8pt to match LIM/COMP/CLAP/POST, movable.
         let caption_y = col_row_y + small_knob + 32.0;
-        ui.painter().text(
+        let precise_pos = crate::ui::layout_overrides::instrument_text(
+            ui,
+            "top.precise_label",
             egui::pos2(col_x, caption_y),
+            egui::vec2(56.0, 12.0),
+            egui::Align2::LEFT_TOP,
+        );
+        ui.painter().text(
+            precise_pos,
             egui::Align2::LEFT_TOP,
             "PRECISE",
-            egui::FontId::new(9.0, egui::FontFamily::Monospace),
+            egui::FontId::new(8.0, egui::FontFamily::Monospace),
             theme::TEXT_DIM,
         );
     }
@@ -1135,7 +1265,7 @@ pub fn draw_mid_row(
     // strip so all three clusters stack visually.
     {
         let small_knob = 18.0f32;
-        let clap_cx = panel_rect.right() - CONTENT_LEFT - 96.0 + 4.0;
+        let clap_cx = panel_rect.right() - CONTENT_LEFT - 80.0 + 4.0;
         let clap_on = params.clap_on.value();
 
         // Align small-knob centers with MID big-knob centers.
@@ -1151,11 +1281,12 @@ pub fn draw_mid_row(
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             ui.horizontal(|ui| {
-                param_knob(
+                param_knob_compact(
                     ui,
                     setter,
                     "clap_lvl",
                     "LVL",
+                    "",
                     &params.clap_level,
                     0.0,
                     1.5,
@@ -1164,11 +1295,12 @@ pub fn draw_mid_row(
                     small_knob,
                     theme::KNOB_METAL,
                 );
-                param_knob(
+                param_knob_compact(
                     ui,
                     setter,
                     "clap_freq",
                     "FREQ",
+                    "",
                     &params.clap_freq,
                     500.0,
                     5000.0,
@@ -1183,11 +1315,12 @@ pub fn draw_mid_row(
                     small_knob,
                     theme::KNOB_METAL,
                 );
-                param_knob(
+                param_knob_compact(
                     ui,
                     setter,
                     "clap_tail",
                     "TAIL",
+                    "",
                     &params.clap_tail_ms,
                     50.0,
                     400.0,
@@ -1200,23 +1333,30 @@ pub fn draw_mid_row(
         });
 
         // LED + CLAP toggle chip BELOW the knob row.
+        // instrument() wrapper makes it draggable in the layout editor.
+        // Pre-positioned at the TAIL knob right side (right of the 3-knob row).
         let chip_top = row_y + small_knob + 32.0;
-        let clap_cy = chip_top + 5.0;
-        draw_led(ui.painter(), clap_cx, clap_cy, clap_on);
+        // CLAP chip — use offset_for() to get saved position, register interact
+        // after the knob cluster so it wins Foreground priority.
+        let clap_base_rect = egui::Rect::from_min_size(
+            egui::pos2(clap_cx - 16.0, chip_top),
+            egui::vec2(46.0, 14.0),
+        );
+        let clap_off = crate::ui::layout_overrides::offset_for(ui.ctx(), "mid.clap_chip");
+        let clap_cx_chip = clap_cx - 16.0 + clap_off.x;
+        let clap_cy = chip_top + 5.0 + clap_off.y;
+        let clap_color = if clap_on { theme::WHITE } else { theme::TEXT_DIM };
         ui.painter().text(
-            egui::pos2(clap_cx + 8.0, clap_cy),
+            egui::pos2(clap_cx_chip, clap_cy),
             egui::Align2::LEFT_CENTER,
             "CLAP",
-            egui::FontId::new(9.0, egui::FontFamily::Monospace),
-            if clap_on {
-                theme::WHITE
-            } else {
-                theme::TEXT_DIM
-            },
+            egui::FontId::new(8.0, egui::FontFamily::Monospace),
+            clap_color,
         );
-        let clap_rect = egui::Rect::from_center_size(
-            egui::pos2(clap_cx + 14.0, clap_cy),
-            egui::vec2(46.0, 14.0),
+        draw_led(ui.painter(), clap_cx_chip + 28.0, clap_cy, clap_on);
+        let clap_rect = egui::Rect::from_min_size(
+            egui::pos2(clap_cx_chip, clap_cy - 7.0),
+            egui::vec2(40.0, 14.0),
         );
         let clap_resp = ui.interact(
             clap_rect,
@@ -1231,6 +1371,9 @@ pub fn draw_mid_row(
         if clap_resp.hovered() {
             clap_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         }
+        // Register CLAP chip interact AFTER the knob cluster instrument()
+        // so CLAP wins Foreground click priority.
+        crate::ui::layout_overrides::instrument(ui, "mid.clap_chip", clap_base_rect);
     }
 
     // Section label at the bottom of the section, inside the borders —
@@ -1352,7 +1495,7 @@ pub fn draw_sat_eq_row(
     // continuity with the master / sub / top / mid rows above.
     let sat_rect = egui::Rect::from_min_size(
         egui::pos2(panel_rect.left() + CONTENT_LEFT, row_knob_y),
-        egui::vec2(KNOB_SPACING * 4.0 + 36.0, SAT_CLUSTER_H),
+        egui::vec2(KNOB_SPACING * 4.0 + 60.0, SAT_CLUSTER_H),
     );
     let sat_rect = crate::ui::layout_overrides::instrument(ui, "row.sat.cluster", sat_rect);
     const SMALL_KNOB: f32 = 18.0;
@@ -1718,18 +1861,19 @@ pub fn draw_filter_cluster(
         });
     });
 
-    // FILTER caption + PRE/POST routing chip BELOW the knob row.
     let caption_y = knob_y + small_knob + 32.0;
-    ui.painter().text(
-        egui::pos2(col_x, caption_y),
-        egui::Align2::LEFT_TOP,
-        "FILTER",
-        egui::FontId::new(9.0, egui::FontFamily::Monospace),
-        theme::TEXT_DIM,
-    );
 
-    let led_x = col_x + 52.0;
-    let led_y = caption_y;
+    // POST/PRE chip — instrument() wrapper makes it draggable.
+    // Pre-positioned at the BOUNCE button right side.
+    let bounce_right = col_x + 40.0 + 15.0 + 40.0; // col_x + CLEAR + gap + BOUNCE
+    let post_base_x = bounce_right - 32.0; // label left-aligned with bounce right
+    let post_base_rect = egui::Rect::from_min_size(
+        egui::pos2(post_base_x, caption_y),
+        egui::vec2(32.0, 10.0),
+    );
+    let post_off = crate::ui::layout_overrides::offset_for(ui.ctx(), "filter.post_chip");
+    let led_x = post_base_x + post_off.x;
+    let led_y = caption_y + post_off.y;
     let pre_on = params.dj_filter_pre.value();
     let led_label = if pre_on { "PRE" } else { "POST" };
     let led_color = if pre_on {
@@ -1748,14 +1892,16 @@ pub fn draw_filter_cluster(
         setter.set_parameter(&params.dj_filter_pre, !pre_on);
         setter.end_set_parameter(&params.dj_filter_pre);
     }
-    draw_led(ui.painter(), led_x + 2.0, led_y + 4.0, pre_on);
     ui.painter().text(
-        egui::pos2(led_x + 12.0, led_y),
+        egui::pos2(led_x, led_y),
         egui::Align2::LEFT_TOP,
         led_label,
         egui::FontId::new(8.0, egui::FontFamily::Monospace),
         led_color,
     );
+    draw_led(ui.painter(), led_x + 26.0, led_y + 4.0, pre_on);
+    // Register POST chip interact AFTER filter cluster so it wins priority.
+    crate::ui::layout_overrides::instrument(ui, "filter.post_chip", post_base_rect);
 }
 
 pub fn draw_dice_row(
@@ -1914,7 +2060,7 @@ pub fn draw_tempo_widget(
             egui::Align2::LEFT_TOP,
             format!("{:.0} BPM · HOST", seq.display_bpm()),
             egui::FontId::new(9.0, egui::FontFamily::Monospace),
-            theme::TEXT_DIM,
+            theme::RED_LED,
         );
         return;
     }
@@ -1965,11 +2111,7 @@ pub fn draw_tempo_widget(
     }
 
     // --- Idle / Armed branch: draw the text, then handle interaction. ---
-    let color = if state.armed {
-        theme::WHITE
-    } else {
-        theme::TEXT_DIM
-    };
+    let color = theme::RED_LED;
     let text = format!("{:.0} BPM", seq.display_bpm());
     ui.painter()
         .text(pos, egui::Align2::LEFT_TOP, &text, font.clone(), color);
@@ -1982,7 +2124,7 @@ pub fn draw_tempo_widget(
                 egui::pos2(pos.x, underline_y),
                 egui::pos2(pos.x + 42.0, underline_y),
             ],
-            egui::Stroke::new(1.0, theme::WHITE),
+            egui::Stroke::new(1.0, theme::RED_LED),
         );
     }
 

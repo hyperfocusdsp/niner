@@ -371,10 +371,17 @@ pub fn instrument(ui: &mut egui::Ui, key: &'static str, base_rect: egui::Rect) -
     // Apply the saved offset (snapped to the user's grid) regardless of
     // editor state — the layout the dev saved IS the layout users see.
     let grid = effective_grid(&ctx);
-    let visual_rect = base_rect.translate(egui::vec2(
+    let translated = base_rect.translate(egui::vec2(
         snap(ov.pos_offset_x, grid),
         snap(ov.pos_offset_y, grid),
     ));
+    // Apply size_scale from the centre so the element grows/shrinks
+    // symmetrically. Default is 1.0 (identity).
+    let visual_rect = if (ov.size_scale - 1.0).abs() > 1e-4 {
+        egui::Rect::from_center_size(translated.center(), translated.size() * ov.size_scale)
+    } else {
+        translated
+    };
 
     // When the editor is off we're done: no interact, no registry, no
     // overlay paint. Production builds pay only an `Arc<Data>` read +
@@ -406,6 +413,44 @@ pub fn instrument(ui: &mut egui::Ui, key: &'static str, base_rect: egui::Rect) -
         let selected = is_selected(&ctx, key);
         if resp.hovered() || resp.dragged() || selected {
             paint_drag_overlay(&ctx, visual_rect, resp.dragged(), selected);
+        }
+
+        // Corner-drag resize — available on all instrumented elements.
+        // Dragging the bottom-right handle scales the element from its
+        // centre. Right-click reset (apply_right_click_reset above) also
+        // resets size_scale back to 1.0 since it wipes the whole entry.
+        if selected {
+            let handle_rect = egui::Rect::from_center_size(
+                visual_rect.right_bottom(),
+                egui::vec2(12.0, 12.0),
+            );
+            let corner_resp = interact_on_overlay(
+                ui,
+                ("layout_resize", key),
+                handle_rect,
+                egui::Sense::drag(),
+            );
+            if corner_resp.dragged() {
+                let delta = corner_resp.drag_delta();
+                let cur_w = visual_rect.width().max(1.0);
+                let scale_delta = delta.x / cur_w;
+                let mut snap_state = snapshot(&ctx);
+                let entry = snap_state.entries.entry(key.to_string()).or_default();
+                entry.size_scale = (entry.size_scale + scale_delta).clamp(0.2, 5.0);
+                write_snapshot(&ctx, snap_state);
+            }
+            // Paint the resize handle as a distinct bright-green square
+            // so it's clearly distinguishable from the regular corner dots.
+            let layer = egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("layout_editor_overlay"),
+            );
+            let painter = ctx.layer_painter(layer);
+            painter.rect_filled(
+                egui::Rect::from_center_size(visual_rect.right_bottom(), egui::vec2(7.0, 7.0)),
+                0.0,
+                egui::Color32::from_rgb(0x40, 0xff, 0x80),
+            );
         }
     }
     let _ = ui; // suppress unused warning when feature off

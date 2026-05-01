@@ -32,16 +32,93 @@ pub fn draw_rack_ear(painter: &egui::Painter, x: f32, y: f32, width: f32, height
 }
 
 /// A Phillips-head rack screw.
-pub fn draw_screw(painter: &egui::Painter, cx: f32, cy: f32, radius: f32) {
+/// Photorealistic hex-socket bolt, top-down view.
+/// `rotation` is the Allen socket angle in radians — vary per screw so none
+/// look perfectly aligned (real hardware never is).
+pub fn draw_hex_screw(painter: &egui::Painter, cx: f32, cy: f32, radius: f32, rotation: f32) {
+    use std::f32::consts::TAU;
     let center = egui::pos2(cx, cy);
-    painter.circle_filled(center, radius, theme::SCREW_LIGHT);
-    painter.circle_filled(center, radius * 0.85, theme::KNOB_METAL);
-    painter.circle_filled(center, radius * 0.7, theme::SCREW_DARK);
-    for i in 0..6 {
-        let angle = (i as f32 / 6.0) * std::f32::consts::TAU - std::f32::consts::PI / 6.0;
-        let p = center + egui::vec2(angle.cos(), angle.sin()) * radius * 0.4;
-        painter.circle_filled(p, 1.0, theme::SCREW_HEX);
-    }
+
+    // Background blot: covers the baked chassis circle underneath.
+    painter.circle_filled(center, radius + 1.5, egui::Color32::from_rgb(0x10, 0x10, 0x12));
+
+    // Drop shadow below the bolt head.
+    painter.circle_filled(
+        center + egui::vec2(0.5, 0.8),
+        radius + 0.5,
+        egui::Color32::from_rgba_premultiplied(0, 0, 0, 60),
+    );
+
+    // Outer rim — dark ring (socket body edge).
+    painter.circle_filled(center, radius, egui::Color32::from_rgb(0x22, 0x22, 0x24));
+
+    // Bolt cap body — stacked circles to fake a radial gradient.
+    let cap_r = radius * 0.84;
+    painter.circle_filled(center, cap_r, egui::Color32::from_rgb(0x40, 0x40, 0x44));
+    // Subtle upper-left brightening.
+    painter.circle_filled(
+        center + egui::vec2(-cap_r * 0.15, -cap_r * 0.15),
+        cap_r * 0.70,
+        egui::Color32::from_rgba_premultiplied(0x65, 0x66, 0x6c, 0x38),
+    );
+    // Subtle lower-right darkening.
+    painter.circle_filled(
+        center + egui::vec2(cap_r * 0.08, cap_r * 0.08),
+        cap_r * 0.80,
+        egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0x18),
+    );
+
+    // Hex socket — recessed into the cap.
+    let socket_r = cap_r * 0.55;
+    let hex6 = |r: f32| -> Vec<egui::Pos2> {
+        (0..6)
+            .map(|i| {
+                let a = (i as f32 / 6.0) * TAU + rotation;
+                center + egui::vec2(a.cos(), a.sin()) * r
+            })
+            .collect()
+    };
+    // Outer socket edge.
+    painter.add(egui::Shape::convex_polygon(
+        hex6(socket_r),
+        egui::Color32::from_rgb(0x20, 0x20, 0x23),
+        egui::Stroke::NONE,
+    ));
+    // Socket floor — darkest.
+    painter.add(egui::Shape::convex_polygon(
+        hex6(socket_r * 0.76),
+        egui::Color32::from_rgb(0x0c, 0x0c, 0x0e),
+        egui::Stroke::NONE,
+    ));
+    // Very subtle inner-wall highlight on upper-left face.
+    let hi_a = rotation + TAU * (4.0 / 6.0);
+    let hi_pts = vec![
+        center + egui::vec2(hi_a.cos(), hi_a.sin()) * socket_r,
+        center + egui::vec2((hi_a + TAU / 6.0).cos(), (hi_a + TAU / 6.0).sin()) * socket_r,
+        center
+            + egui::vec2((hi_a + TAU / 6.0).cos(), (hi_a + TAU / 6.0).sin())
+                * socket_r
+                * 0.76,
+        center + egui::vec2(hi_a.cos(), hi_a.sin()) * socket_r * 0.76,
+    ];
+    painter.add(egui::Shape::convex_polygon(
+        hi_pts,
+        egui::Color32::from_rgba_premultiplied(0xff, 0xff, 0xff, 0x08),
+        egui::Stroke::NONE,
+    ));
+
+    // Very subtle specular on cap — matte finish, not shiny.
+    let spec = center + egui::vec2(-cap_r * 0.28, -cap_r * 0.28);
+    painter.circle_filled(
+        spec,
+        cap_r * 0.16,
+        egui::Color32::from_rgba_premultiplied(0xff, 0xff, 0xff, 0x16),
+    );
+}
+
+/// Legacy alias kept so the procedural fallback still compiles.
+pub fn draw_screw(painter: &egui::Painter, cx: f32, cy: f32, radius: f32) {
+    draw_hex_screw(painter, cx, cy, radius, 0.3);
 }
 
 /// Set once at editor startup when the baked chassis texture loads

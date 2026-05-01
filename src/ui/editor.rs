@@ -451,13 +451,33 @@ pub fn create(
                         } else {
                             format!("UI {:.1}×", scale)
                         };
-                        // KICK SYNTHESIZER is right-aligned at right-CONTENT_LEFT
-                        // and ~80px wide at 8pt mono; clear it by ~14px.
-                        let badge_right = panel_rect.right() - CONTENT_LEFT - 94.0;
+                        // UI 1× badge sits between TEST and KICK SYNTHESIZER,
+                        // anchored to TEST's rendered right edge so it follows
+                        // when TEST is repositioned in the layout editor.
+                        let test_right = panel_rect.left()
+                            + CONTENT_LEFT
+                            + 111.0
+                            + 40.0
+                            + crate::ui::layout_overrides::offset_for(
+                                ctx,
+                                "header.test_btn",
+                            )
+                            .x;
                         let badge_w = 50.0;
                         let badge_h = 14.0;
+                        let base_badge_pos = egui::pos2(
+                            test_right + 8.0,
+                            header_center_y,
+                        );
+                        let badge_pos = crate::ui::layout_overrides::instrument_text(
+                            ui,
+                            "header.ui_scale",
+                            base_badge_pos,
+                            egui::vec2(badge_w, badge_h),
+                            egui::Align2::LEFT_CENTER,
+                        );
                         let hit = egui::Rect::from_min_size(
-                            egui::pos2(badge_right - badge_w, header_center_y - badge_h * 0.5),
+                            egui::pos2(badge_pos.x, badge_pos.y - badge_h * 0.5),
                             egui::vec2(badge_w, badge_h),
                         );
                         let resp = ui
@@ -473,8 +493,8 @@ pub fn create(
                             theme::TEXT_DIM
                         };
                         ui.painter().text(
-                            egui::pos2(badge_right, header_center_y),
-                            egui::Align2::RIGHT_CENTER,
+                            badge_pos,
+                            egui::Align2::LEFT_CENTER,
                             &scale_text,
                             egui::FontId::new(8.0, egui::FontFamily::Monospace),
                             color,
@@ -679,11 +699,9 @@ pub fn create(
                     // user drags it via the layout editor; can also be
                     // dragged independently via its own "master.bpm" key.
                     {
-                        let display_off =
-                            crate::ui::layout_overrides::offset_for(ctx, "master.output_display");
                         let lit = crate::ui::widgets::lit_rect_default(
-                            wf_left + display_off.x,
-                            master_y + display_off.y,
+                            wf_left,
+                            master_y,
                             wf_width,
                             wf_height,
                         );
