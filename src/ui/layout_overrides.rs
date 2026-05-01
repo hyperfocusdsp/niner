@@ -420,16 +420,10 @@ pub fn instrument(ui: &mut egui::Ui, key: &'static str, base_rect: egui::Rect) -
         // centre. Right-click reset (apply_right_click_reset above) also
         // resets size_scale back to 1.0 since it wipes the whole entry.
         if selected {
-            let handle_rect = egui::Rect::from_center_size(
-                visual_rect.right_bottom(),
-                egui::vec2(12.0, 12.0),
-            );
-            let corner_resp = interact_on_overlay(
-                ui,
-                ("layout_resize", key),
-                handle_rect,
-                egui::Sense::drag(),
-            );
+            let handle_rect =
+                egui::Rect::from_center_size(visual_rect.right_bottom(), egui::vec2(12.0, 12.0));
+            let corner_resp =
+                interact_on_overlay(ui, ("layout_resize", key), handle_rect, egui::Sense::drag());
             if corner_resp.dragged() {
                 let delta = corner_resp.drag_delta();
                 let cur_w = visual_rect.width().max(1.0);

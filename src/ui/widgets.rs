@@ -40,7 +40,11 @@ pub fn draw_hex_screw(painter: &egui::Painter, cx: f32, cy: f32, radius: f32, ro
     let center = egui::pos2(cx, cy);
 
     // Background blot: covers the baked chassis circle underneath.
-    painter.circle_filled(center, radius + 1.5, egui::Color32::from_rgb(0x10, 0x10, 0x12));
+    painter.circle_filled(
+        center,
+        radius + 1.5,
+        egui::Color32::from_rgb(0x10, 0x10, 0x12),
+    );
 
     // Drop shadow below the bolt head.
     painter.circle_filled(
@@ -95,10 +99,7 @@ pub fn draw_hex_screw(painter: &egui::Painter, cx: f32, cy: f32, radius: f32, ro
     let hi_pts = vec![
         center + egui::vec2(hi_a.cos(), hi_a.sin()) * socket_r,
         center + egui::vec2((hi_a + TAU / 6.0).cos(), (hi_a + TAU / 6.0).sin()) * socket_r,
-        center
-            + egui::vec2((hi_a + TAU / 6.0).cos(), (hi_a + TAU / 6.0).sin())
-                * socket_r
-                * 0.76,
+        center + egui::vec2((hi_a + TAU / 6.0).cos(), (hi_a + TAU / 6.0).sin()) * socket_r * 0.76,
         center + egui::vec2(hi_a.cos(), hi_a.sin()) * socket_r * 0.76,
     ];
     painter.add(egui::Shape::convex_polygon(

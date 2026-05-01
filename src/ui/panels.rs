@@ -122,9 +122,8 @@ pub fn draw_chrome(
         (panel_rect.right() - 8.0, panel_rect.bottom() - 18.0),
     ];
     let screw_keys = ["screw.tl", "screw.tr", "screw.bl", "screw.br"];
-    let screw_offsets: [egui::Vec2; 4] = std::array::from_fn(|i| {
-        crate::ui::layout_overrides::offset_for(ui.ctx(), screw_keys[i])
-    });
+    let screw_offsets: [egui::Vec2; 4] =
+        std::array::from_fn(|i| crate::ui::layout_overrides::offset_for(ui.ctx(), screw_keys[i]));
     let screw_scales: [f32; 4] = std::array::from_fn(|i| {
         crate::ui::layout_overrides::override_for(ui.ctx(), screw_keys[i]).size_scale
     });
@@ -224,8 +223,8 @@ pub fn draw_chrome(
             egui::pos2(bx, by),
             egui::vec2(SCREW_R * 2.0 * scale, SCREW_R * 2.0 * scale),
         );
-        let _ = crate::ui::layout_overrides::instrument(ui, screw_keys[i], base_rect)
-            .translate(off); // instrument already applies offset internally
+        let _ =
+            crate::ui::layout_overrides::instrument(ui, screw_keys[i], base_rect).translate(off); // instrument already applies offset internally
         let _ = off; // suppress unused warning
     }
     header_center_y
@@ -333,9 +332,8 @@ impl<'a> MasterRow<'a> {
         // Visual display width. Base = midpoint between previous attempts.
         // size_scale from the layout editor's corner-drag resize is applied so
         // the user can widen/narrow the display live.
-        let display_scale = crate::ui::layout_overrides::override_for(
-            ui.ctx(), "master.output_display",
-        ).size_scale;
+        let display_scale =
+            crate::ui::layout_overrides::override_for(ui.ctx(), "master.output_display").size_scale;
         let display_paint_w = (wf_width - 6.0) * display_scale;
         let toggle_resp = ui
             .interact(
@@ -370,7 +368,8 @@ impl<'a> MasterRow<'a> {
             let kx = wf_left + wf_width + 16.0;
             let sx = kx + KNOB_SPACING * 3.0 + 4.0;
             let sw = (panel_rect.right() - CONTENT_LEFT - sx).max(0.0);
-            let comp_lit = crate::ui::widgets::lit_rect_default(sx + 2.0, master_y, sw - 4.0, wf_height);
+            let comp_lit =
+                crate::ui::widgets::lit_rect_default(sx + 2.0, master_y, sw - 4.0, wf_height);
             let base_cx = panel_rect.right() - CONTENT_LEFT - 4.0;
             let base_cy = comp_lit.top() + 4.0;
             egui::Rect::from_center_size(egui::pos2(base_cx, base_cy), egui::vec2(34.0, 12.0))
@@ -1338,14 +1337,16 @@ pub fn draw_mid_row(
         let chip_top = row_y + small_knob + 32.0;
         // CLAP chip — use offset_for() to get saved position, register interact
         // after the knob cluster so it wins Foreground priority.
-        let clap_base_rect = egui::Rect::from_min_size(
-            egui::pos2(clap_cx - 16.0, chip_top),
-            egui::vec2(46.0, 14.0),
-        );
+        let clap_base_rect =
+            egui::Rect::from_min_size(egui::pos2(clap_cx - 16.0, chip_top), egui::vec2(46.0, 14.0));
         let clap_off = crate::ui::layout_overrides::offset_for(ui.ctx(), "mid.clap_chip");
         let clap_cx_chip = clap_cx - 16.0 + clap_off.x;
         let clap_cy = chip_top + 5.0 + clap_off.y;
-        let clap_color = if clap_on { theme::WHITE } else { theme::TEXT_DIM };
+        let clap_color = if clap_on {
+            theme::WHITE
+        } else {
+            theme::TEXT_DIM
+        };
         ui.painter().text(
             egui::pos2(clap_cx_chip, clap_cy),
             egui::Align2::LEFT_CENTER,
@@ -1867,10 +1868,8 @@ pub fn draw_filter_cluster(
     // Pre-positioned at the BOUNCE button right side.
     let bounce_right = col_x + 40.0 + 15.0 + 40.0; // col_x + CLEAR + gap + BOUNCE
     let post_base_x = bounce_right - 32.0; // label left-aligned with bounce right
-    let post_base_rect = egui::Rect::from_min_size(
-        egui::pos2(post_base_x, caption_y),
-        egui::vec2(32.0, 10.0),
-    );
+    let post_base_rect =
+        egui::Rect::from_min_size(egui::pos2(post_base_x, caption_y), egui::vec2(32.0, 10.0));
     let post_off = crate::ui::layout_overrides::offset_for(ui.ctx(), "filter.post_chip");
     let led_x = post_base_x + post_off.x;
     let led_y = caption_y + post_off.y;

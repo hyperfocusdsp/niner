@@ -56,20 +56,38 @@ pub struct PresetEntry {
 /// at index 1.
 pub fn factory_presets() -> Vec<PresetEntry> {
     const FACTORIES: &[(&str, &str)] = &[
-        ("Clean Sub",     include_str!("../assets/factory_presets/Clean_Sub.json")),
-        ("Punchy Techno", include_str!("../assets/factory_presets/Punchy_Techno.json")),
-        ("909-ish",       include_str!("../assets/factory_presets/909-ish.json")),
-        ("808",           include_str!("../assets/factory_presets/808.json")),
-        ("909",           include_str!("../assets/factory_presets/909.json")),
-        ("hh",            include_str!("../assets/factory_presets/hh.json")),
-        ("Init",          include_str!("../assets/factory_presets/Init.json")),
-        ("overdose",      include_str!("../assets/factory_presets/overdose.json")),
-        ("psy",           include_str!("../assets/factory_presets/psy.json")),
-        ("sd1",           include_str!("../assets/factory_presets/sd1.json")),
-        ("sd2",           include_str!("../assets/factory_presets/sd2.json")),
-        ("tight",         include_str!("../assets/factory_presets/tight.json")),
-        ("clap",          include_str!("../assets/factory_presets/clap.json")),
-        ("niner",         include_str!("../assets/factory_presets/niner.json")),
+        (
+            "Clean Sub",
+            include_str!("../assets/factory_presets/Clean_Sub.json"),
+        ),
+        (
+            "Punchy Techno",
+            include_str!("../assets/factory_presets/Punchy_Techno.json"),
+        ),
+        (
+            "909-ish",
+            include_str!("../assets/factory_presets/909-ish.json"),
+        ),
+        ("808", include_str!("../assets/factory_presets/808.json")),
+        ("909", include_str!("../assets/factory_presets/909.json")),
+        ("hh", include_str!("../assets/factory_presets/hh.json")),
+        ("Init", include_str!("../assets/factory_presets/Init.json")),
+        (
+            "overdose",
+            include_str!("../assets/factory_presets/overdose.json"),
+        ),
+        ("psy", include_str!("../assets/factory_presets/psy.json")),
+        ("sd1", include_str!("../assets/factory_presets/sd1.json")),
+        ("sd2", include_str!("../assets/factory_presets/sd2.json")),
+        (
+            "tight",
+            include_str!("../assets/factory_presets/tight.json"),
+        ),
+        ("clap", include_str!("../assets/factory_presets/clap.json")),
+        (
+            "niner",
+            include_str!("../assets/factory_presets/niner.json"),
+        ),
     ];
     FACTORIES
         .iter()

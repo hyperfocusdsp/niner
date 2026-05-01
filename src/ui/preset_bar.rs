@@ -440,7 +440,6 @@ impl PresetBar {
                 crate::presets::save_last_preset_name(&entry.name);
             }
         }
-
     }
 
     fn render_edit_mode(

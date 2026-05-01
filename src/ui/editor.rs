@@ -458,17 +458,10 @@ pub fn create(
                             + CONTENT_LEFT
                             + 111.0
                             + 40.0
-                            + crate::ui::layout_overrides::offset_for(
-                                ctx,
-                                "header.test_btn",
-                            )
-                            .x;
+                            + crate::ui::layout_overrides::offset_for(ctx, "header.test_btn").x;
                         let badge_w = 50.0;
                         let badge_h = 14.0;
-                        let base_badge_pos = egui::pos2(
-                            test_right + 8.0,
-                            header_center_y,
-                        );
+                        let base_badge_pos = egui::pos2(test_right + 8.0, header_center_y);
                         let badge_pos = crate::ui::layout_overrides::instrument_text(
                             ui,
                             "header.ui_scale",
@@ -700,10 +693,7 @@ pub fn create(
                     // dragged independently via its own "master.bpm" key.
                     {
                         let lit = crate::ui::widgets::lit_rect_default(
-                            wf_left,
-                            master_y,
-                            wf_width,
-                            wf_height,
+                            wf_left, master_y, wf_width, wf_height,
                         );
                         let bpm_pos = crate::ui::layout_overrides::instrument_text(
                             ui,
