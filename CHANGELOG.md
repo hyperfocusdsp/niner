@@ -2,6 +2,40 @@
 
 All notable changes to Niner (formerly Slammer) are documented here.
 
+## [0.7.4] — 2026-05-05
+
+### Fixed
+
+- **`install.sh` now installs the CLAP bundle on Linux.** The Linux
+  CLAP ships as a single `niner.clap` shared object (not a `.bundle`
+  directory like macOS), so the previous `[ -d "$CLAP_BUNDLE" ]` guard
+  silently skipped it. The check is now `[ -e ... ]`, which matches
+  both the macOS bundle directory and the Linux `.clap` file. VST3
+  install was unaffected. macOS install was unaffected (CLAP is a
+  bundle directory there, so `-d` matched). Anyone who ran
+  `install.sh` on Linux for v0.7.0–v0.7.3 should re-run it from the
+  v0.7.4 archive (or copy `niner.clap` to `~/.clap/` manually).
+
+## [0.7.3] — 2026-05-03
+
+### Added
+
+- **Feedback link in the footer.** Click the `feedback` text opposite
+  the Hyperfocus DSP wordmark to open your mail client pre-filled with
+  Niner version, OS, and architecture in the subject + body. Routes
+  to `feedback@hyperfocusdsp.com`.
+
+### Fixed
+
+- **Editor reopen no longer renders a black UI in Bitwig.** Long-
+  standing latent bug surfaced by Bitwig's GL-context teardown on
+  editor close+reopen: the cached `egui::TextureHandle`s in the editor
+  outlived the `egui::Context`, so post-reopen `painter.image()` calls
+  referenced freed `TextureId`s and painted nothing. The editor now
+  detects context-identity change and clears the texture caches +
+  bake-gating atomics so the lazy-upload paths re-fire. Standalone
+  and Renoise were unaffected.
+
 ## [0.7.2] — 2026-05-01
 
 ### Fixed

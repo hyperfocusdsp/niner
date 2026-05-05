@@ -25,7 +25,7 @@ VST3_BUNDLE="$SCRIPT_DIR/niner.vst3"
 CLAP_BUNDLE="$SCRIPT_DIR/niner.clap"
 STANDALONE="$SCRIPT_DIR/niner-standalone"
 
-if [ ! -d "$VST3_BUNDLE" ] && [ ! -d "$CLAP_BUNDLE" ]; then
+if [ ! -d "$VST3_BUNDLE" ] && [ ! -e "$CLAP_BUNDLE" ]; then
   echo "Error: no niner.vst3 or niner.clap found in $SCRIPT_DIR"
   echo "Make sure install.sh is in the same folder as the extracted release."
   exit 1
@@ -41,8 +41,8 @@ if [ -d "$VST3_BUNDLE" ]; then
   echo "  VST3       -> $VST3_DEST/niner.vst3"
 fi
 
-# CLAP bundle.
-if [ -d "$CLAP_BUNDLE" ]; then
+# CLAP — bundle directory on macOS, single .clap shared object on Linux.
+if [ -e "$CLAP_BUNDLE" ]; then
   mkdir -p "$CLAP_DEST"
   rm -rf "$CLAP_DEST/niner.clap"
   cp -r "$CLAP_BUNDLE" "$CLAP_DEST/"
