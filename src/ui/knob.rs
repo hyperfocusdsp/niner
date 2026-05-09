@@ -353,8 +353,7 @@ fn knob_inner(
             // before rendering and schedules a repaint when it lapses.
             if response.hovered() || response.dragged() {
                 let display_text = format!("{} {}", label, format_value(*value));
-                let expires_at = std::time::Instant::now()
-                    + std::time::Duration::from_millis(500);
+                let expires_at = std::time::Instant::now() + std::time::Duration::from_millis(500);
                 ui.ctx().data_mut(|d| {
                     d.insert_temp(egui::Id::new("knob_display"), display_text);
                     d.insert_temp::<std::time::Instant>(

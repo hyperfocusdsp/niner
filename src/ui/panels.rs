@@ -2141,9 +2141,10 @@ pub fn draw_tempo_widget(
     // is computed in editor.rs and stashed in ctx.data so we don't have
     // to thread the counter through every panel call). Not interactive,
     // not labelled — just a discreet pulse.
-    let intensity: f32 = ui
-        .ctx()
-        .data(|d| d.get_temp(egui::Id::new("niner_midi_activity")).unwrap_or(0.0_f32));
+    let intensity: f32 = ui.ctx().data(|d| {
+        d.get_temp(egui::Id::new("niner_midi_activity"))
+            .unwrap_or(0.0_f32)
+    });
     if intensity > 0.0 || seq.host_synced.load(std::sync::atomic::Ordering::Relaxed) {
         // Always allocate the same rect so layout doesn't shift between
         // host-synced and standalone modes — only the colour changes.

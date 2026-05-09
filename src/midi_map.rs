@@ -215,16 +215,9 @@ impl MidiMapState {
     /// Bind `(channel, source) → param_id`, replacing any prior binding
     /// either for that exact source or for the named param. Each param has
     /// at most one binding; each (channel, source) hits at most one param.
-    pub fn bind(
-        &mut self,
-        channel: u8,
-        source: MidiSource,
-        param_id: &str,
-        encoding: CcEncoding,
-    ) {
-        self.bindings.retain(|b| {
-            !((b.channel == channel && b.source == source) || b.param_id == param_id)
-        });
+    pub fn bind(&mut self, channel: u8, source: MidiSource, param_id: &str, encoding: CcEncoding) {
+        self.bindings
+            .retain(|b| !((b.channel == channel && b.source == source) || b.param_id == param_id));
         self.bindings.push(MidiBinding {
             channel,
             source,
@@ -478,14 +471,8 @@ mod tests {
     #[test]
     fn detect_cc_encoding_picks_right_kind() {
         // First-tick signatures.
-        assert_eq!(
-            detect_cc_encoding(1.0 / 127.0),
-            CcEncoding::BinaryOffset
-        );
-        assert_eq!(
-            detect_cc_encoding(127.0 / 127.0),
-            CcEncoding::BinaryOffset
-        );
+        assert_eq!(detect_cc_encoding(1.0 / 127.0), CcEncoding::BinaryOffset);
+        assert_eq!(detect_cc_encoding(127.0 / 127.0), CcEncoding::BinaryOffset);
         assert_eq!(detect_cc_encoding(63.0 / 127.0), CcEncoding::Centered);
         assert_eq!(detect_cc_encoding(65.0 / 127.0), CcEncoding::Centered);
         // Anything mid-range (e.g. an absolute pot at ~50%) -> absolute.
@@ -497,7 +484,12 @@ mod tests {
     fn serde_round_trip_mixed_sources() {
         let mut s = MidiMapState::default();
         s.bind(0, MidiSource::Cc(74), "decay", CcEncoding::BinaryOffset);
-        s.bind(OMNI, MidiSource::NoteOn(7), "master_vol", CcEncoding::Absolute);
+        s.bind(
+            OMNI,
+            MidiSource::NoteOn(7),
+            "master_vol",
+            CcEncoding::Absolute,
+        );
         let json = serde_json::to_string(&s).unwrap();
         let back: MidiMapState = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
@@ -552,7 +544,12 @@ mod tests {
         let mut s = MidiMapState::default();
         s.bind(0, MidiSource::NoteOn(36), "decay", CcEncoding::Absolute);
         s.bind(3, MidiSource::Cc(74), "drift", CcEncoding::Absolute); // CC binding shouldn't block notes
-        s.bind(OMNI, MidiSource::NoteOn(60), "master_vol", CcEncoding::Absolute);
+        s.bind(
+            OMNI,
+            MidiSource::NoteOn(60),
+            "master_vol",
+            CcEncoding::Absolute,
+        );
 
         let map = NoteBlockMap::new();
         map.rebuild_from(&s);

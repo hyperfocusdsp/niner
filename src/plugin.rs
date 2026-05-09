@@ -387,10 +387,7 @@ impl Plugin for Niner {
                     }
                 }
                 NoteEvent::MidiCC {
-                    channel,
-                    cc,
-                    value,
-                    ..
+                    channel, cc, value, ..
                 } => {
                     self.midi_activity.fetch_add(1, Ordering::Relaxed);
                     // Forward CCs to the editor's MIDI Learn pipeline. Push
@@ -398,7 +395,9 @@ impl Plugin for Niner {
                     // un-drained, ~4 s of sustained traffic at 60 Hz) the
                     // newest event is dropped silently — MIDI Learn isn't
                     // realtime-critical.
-                    let _ = self.midi_event_tx.push(MidiInputEvent::Cc { channel, cc, value });
+                    let _ = self
+                        .midi_event_tx
+                        .push(MidiInputEvent::Cc { channel, cc, value });
                 }
                 _ => {}
             }

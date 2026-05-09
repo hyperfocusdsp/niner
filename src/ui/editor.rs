@@ -235,10 +235,7 @@ pub fn create(
     // `&FloatParam`, and at paint time we look up that pointer to identify
     // the param for the right-click menu — so no call site changes are needed
     // to opt into MIDI Learn.
-    let (id_to_ptr, ptr_to_id): (
-        Arc<HashMap<String, ParamPtr>>,
-        Arc<HashMap<usize, String>>,
-    ) = {
+    let (id_to_ptr, ptr_to_id): (Arc<HashMap<String, ParamPtr>>, Arc<HashMap<usize, String>>) = {
         let mut id_to_ptr = HashMap::new();
         let mut ptr_to_id = HashMap::new();
         for (id, ptr, _name) in params.param_map() {
@@ -458,13 +455,11 @@ pub fn create(
                                 // by 1 BPM per detent (1/8 with shift).
                                 let new_bpm = match encoding {
                                     CcEncoding::Absolute => 40.0 + value * (240.0 - 40.0),
-                                    CcEncoding::BinaryOffset
-                                    | CcEncoding::Centered => {
+                                    CcEncoding::BinaryOffset | CcEncoding::Centered => {
                                         let delta = decode_relative_delta(value, encoding);
                                         let fine = ctx.input(|i| i.modifiers.shift);
                                         let step = if fine { 0.125 } else { 1.0 };
-                                        (sequencer.bpm() + delta as f32 * step)
-                                            .clamp(40.0, 240.0)
+                                        (sequencer.bpm() + delta as f32 * step).clamp(40.0, 240.0)
                                     }
                                 };
                                 sequencer.set_bpm(new_bpm);
@@ -478,8 +473,7 @@ pub fn create(
                                 // delta.
                                 let trigger = match encoding {
                                     CcEncoding::Absolute => value > 0.5,
-                                    CcEncoding::BinaryOffset
-                                    | CcEncoding::Centered => {
+                                    CcEncoding::BinaryOffset | CcEncoding::Centered => {
                                         decode_relative_delta(value, encoding) != 0
                                     }
                                 };
@@ -512,8 +506,7 @@ pub fn create(
                                     let fine = ctx.input(|i| i.modifiers.shift);
                                     let steps_per_range = if fine { 512.0 } else { 64.0 };
                                     let delta_norm = delta as f32 / steps_per_range;
-                                    let current =
-                                        unsafe { ptr.unmodulated_normalized_value() };
+                                    let current = unsafe { ptr.unmodulated_normalized_value() };
                                     (current + delta_norm).clamp(0.0, 1.0)
                                 }
                             };
@@ -1302,11 +1295,7 @@ pub fn create(
                             egui::vec2(feedback_w, feedback_h),
                         );
                         let resp = ui
-                            .interact(
-                                hit,
-                                egui::Id::new("footer_feedback"),
-                                egui::Sense::click(),
-                            )
+                            .interact(hit, egui::Id::new("footer_feedback"), egui::Sense::click())
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .on_hover_text("Send feedback (opens your mail client)");
                         let color = if resp.hovered() {
