@@ -14,8 +14,8 @@ use crate::params::NinerParams;
 use crate::ui::knob;
 use crate::ui::theme;
 use crate::ui::widgets::{
-    draw_groove, draw_inset_display_no_glass, draw_led, draw_rack_ear, draw_screw,
-    lit_rect_default, param_knob, param_knob_compact,
+    attach_midi_learn_menu_for_param, draw_groove, draw_inset_display_no_glass, draw_led,
+    draw_rack_ear, draw_screw, lit_rect_default, param_knob, param_knob_compact,
 };
 
 pub const KNOB_SIZE: f32 = 32.0;
@@ -617,7 +617,9 @@ impl<'a> MasterRow<'a> {
                     theme::SECTION_MASTER,
                 );
                 // Master volume is stored as gain and displayed in dB.
-                let mut vol_db = util::gain_to_db(params.master_volume.value());
+                // unmodulated_plain_value, not value() — master volume's
+                // Logarithmic(10ms) smoother would otherwise drag the knob.
+                let mut vol_db = util::gain_to_db(params.master_volume.unmodulated_plain_value());
                 let resp = knob::knob(
                     ui,
                     egui::Id::new("master"),
@@ -640,6 +642,9 @@ impl<'a> MasterRow<'a> {
                     setter.begin_set_parameter(&params.master_volume);
                     setter.set_parameter(&params.master_volume, util::db_to_gain(vol_db));
                     setter.end_set_parameter(&params.master_volume);
+                }
+                if let Some(r) = resp.response.as_ref() {
+                    attach_midi_learn_menu_for_param(r, &params.master_volume);
                 }
             });
         });
@@ -754,7 +759,9 @@ impl<'a> MasterRow<'a> {
                             theme::KNOB_METAL,
                         );
                         if rct_changed {
-                            let react = params.comp_react.value();
+                            // Read the user's dialled value, not the smoothed
+                            // mid-ramp state (Linear(10ms) smoother).
+                            let react = params.comp_react.unmodulated_plain_value();
                             let atk_ms = 30.0 + react * (1.5 - 30.0);
                             let rel_ms = 400.0 + react * (40.0 - 400.0);
                             setter.begin_set_parameter(&params.comp_atk_ms);
@@ -1820,7 +1827,8 @@ pub fn draw_filter_cluster(
     ui.allocate_new_ui(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         ui.horizontal(|ui| {
-            let mut filt_val = params.dj_filter_pos.value();
+            // unmodulated_plain_value — dj_filter_pos has Linear(5ms) smoother.
+            let mut filt_val = params.dj_filter_pos.unmodulated_plain_value();
             let resp = knob::knob(
                 ui,
                 egui::Id::new("dj_filter_pos"),
@@ -1854,6 +1862,9 @@ pub fn draw_filter_cluster(
                 setter.begin_set_parameter(&params.dj_filter_pos);
                 setter.set_parameter(&params.dj_filter_pos, filt_val);
                 setter.end_set_parameter(&params.dj_filter_pos);
+            }
+            if let Some(r) = resp.response.as_ref() {
+                attach_midi_learn_menu_for_param(r, &params.dj_filter_pos);
             }
 
             param_knob(

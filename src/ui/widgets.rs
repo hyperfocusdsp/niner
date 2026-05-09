@@ -54,6 +54,15 @@ fn midi_learn_ctx(ctx: &egui::Context) -> Option<MidiLearnCtx> {
     ctx.data(|d| d.get_temp::<MidiLearnCtx>(egui::Id::new(CTX_DATA_KEY)))
 }
 
+/// Public alias of [`attach_midi_learn_menu`] for callers outside this
+/// module that have a `&FloatParam` in scope. Used by knobs rendered with
+/// the raw [`knob::knob`] helper (e.g. master volume, DJ filter) which
+/// can't go through `param_knob`/`param_knob_compact` because they need
+/// custom value-to-display mapping (dB conversion, HP/LP labelling).
+pub fn attach_midi_learn_menu_for_param(response: &egui::Response, param: &FloatParam) {
+    attach_midi_learn_menu(response, param as *const FloatParam as usize);
+}
+
 /// Attach a "MIDI Learn / Forget MIDI" right-click menu to a knob's
 /// response, anchored at the param identified by `param_ptr` (raw
 /// `*const FloatParam as usize`). No-op if the editor hasn't published a
@@ -767,7 +776,13 @@ pub fn param_knob(
     diameter: f32,
     core_color: egui::Color32,
 ) -> bool {
-    let mut val = param.value();
+    // Read the user-set target, NOT the smoothed current value: smoothed
+    // params (e.g. master decay's Linear(20ms)) are mid-ramp during the
+    // same frame the user is dragging, so feeding `param.value()` back
+    // into the knob makes the indicator lurch toward the smoother state
+    // instead of staying where the user dragged it. `unmodulated_plain_value()`
+    // is what the user actually dialled in.
+    let mut val = param.unmodulated_plain_value();
     let knob_resp = knob::knob(
         ui,
         egui::Id::new(id),
@@ -815,7 +830,8 @@ pub fn param_knob_compact(
     diameter: f32,
     core_color: egui::Color32,
 ) -> bool {
-    let mut val = param.value();
+    // See `param_knob` above for why this isn't `param.value()`.
+    let mut val = param.unmodulated_plain_value();
     let knob_resp = knob::knob_compact(
         ui,
         egui::Id::new(id),

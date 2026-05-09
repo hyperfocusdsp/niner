@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 use crate::export::{self, ExportOutcome};
 use crate::midi_map::{
-    decode_relative_delta, detect_cc_encoding, sentinel, CcEncoding, MidiInputEvent,
-    MidiSource, NoteBlockMap,
+    decode_relative_delta, detect_cc_encoding, sentinel, CcEncoding, MidiInputEvent, MidiSource,
+    NoteBlockMap,
 };
 use crate::params::NinerParams;
 use crate::presets::PresetManager;
@@ -389,13 +389,24 @@ pub fn create(
                         // 1) LEARN: consume the armed param if any.
                         let mut armed_guard = learn_armed.lock();
                         if let Some(armed_id) = armed_guard.take() {
-                            // Auto-detect the encoding from the captured
-                            // value's signature. Notes are always absolute
-                            // (velocity → value), so we keep `Absolute`
-                            // for `MidiSource::NoteOn` and only run the
-                            // heuristic for CC sources. The user can
-                            // override from the right-click menu if the
-                            // first-tick guess was unlucky.
+                            // Auto-detect the encoding from the first
+                            // captured CC value. Notes are always absolute
+                            // (velocity → value), so the heuristic only runs
+                            // for `MidiSource::Cc`.
+                            //
+                            // Important: a hard `Absolute` default looks
+                            // attractive but breaks relative encoders
+                            // (BeatStep MK1 in default mode, BCR2000,
+                            // FaderFox) — turning the encoder produces a
+                            // raw CC of 1 or 127, which Absolute would
+                            // interpret as ~0 or ~1.0 (param flicks to the
+                            // extremes). The heuristic catches that pattern
+                            // (1|127 → BinaryOffset, 63|65 → Centered) and
+                            // is correct for the BeatStep workflow we use.
+                            // Edge case: an absolute pot whose first move
+                            // happens to land on raw 1/63/65/127 will be
+                            // mis-classified — fix via right-click → Encoding
+                            // picker on that specific knob.
                             let encoding = match source {
                                 MidiSource::Cc(_) => detect_cc_encoding(value),
                                 MidiSource::NoteOn(_) => CcEncoding::Absolute,
