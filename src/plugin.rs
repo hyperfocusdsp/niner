@@ -343,32 +343,47 @@ impl Plugin for Niner {
             }
         }
 
+        // Each unblocked NoteOn is scheduled at its `timing` frame offset
+        // within the buffer via the engine's pending ring. Under the JACK
+        // backend (and in a DAW host) `timing` is the real sample-accurate
+        // offset that JACK / the host computed from the MIDI port; under
+        // the cpal/midir standalone backend `timing` is hardcoded to 0
+        // (cpal.rs:664), so events stack at sample 0 — that mode is the
+        // escape hatch only, the default JACK launcher path delivers true
+        // micro-timing.
+        //
+        // Scheduling at samples_until=0 is functionally equivalent to a
+        // direct `engine.trigger()` before `engine.process()`: the
+        // per-sample `tick_pending_internal()` at the top of the audio
+        // loop fires it on the first sample. So this single path covers
+        // both JACK (timing > 0 → fires mid-buffer) and cpal (timing == 0
+        // → fires at sample 0).
         while let Some(event) = context.next_event() {
             match event {
                 NoteEvent::NoteOn {
+                    timing,
                     channel,
                     note,
                     velocity,
                     ..
                 } => {
                     self.midi_activity.fetch_add(1, Ordering::Relaxed);
-                    // If this `(channel, note)` has been bound to a knob via
-                    // MIDI Learn, treat it as a controller — forward to the
-                    // editor for param-set, do NOT trigger the kick. This is
-                    // the BeatStep "encoder rotation fires kicks" fix.
-                    // Lookup is a single relaxed atomic load + bit test.
                     if self.note_block_map.is_blocked(channel, note) {
+                        // Bound to a knob via MIDI Learn — route to the
+                        // editor instead of triggering. Lookup is one
+                        // relaxed atomic load + bit test.
                         let _ = self.midi_event_tx.push(MidiInputEvent::NoteOn {
                             channel,
                             note,
                             velocity,
                         });
                     } else {
-                        // Default behaviour preserved for every existing user:
-                        // any unbound note triggers the kick. Pads on the
-                        // BeatStep, MIDI keyboards, sequenced notes from a
-                        // DAW track all keep working without configuration.
-                        self.engine.trigger(&kick_params);
+                        // Schedule at the event's frame offset within the
+                        // buffer. Clamp defensively: nih-plug already
+                        // clamps via clamp_input_event_timing for JACK,
+                        // but `timing` is host-supplied in DAW contexts.
+                        let offset = (timing as usize).min(num_samples.saturating_sub(1)) as u32;
+                        self.engine.push_pending(offset);
                     }
                 }
                 NoteEvent::MidiCC {

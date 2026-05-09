@@ -334,7 +334,6 @@ impl KickEngine {
     /// Push a hit into the first free ring slot. Silently drops if the ring
     /// is full (pathological — 12 slots covers 4 hits × 3 overlapping steps,
     /// which is beyond musically reasonable).
-    #[cfg(test)]
     fn push_pending_internal(&mut self, samples_until: u32) {
         for slot in &mut self.pending {
             if !slot.live {
@@ -363,7 +362,11 @@ impl KickEngine {
         count
     }
 
-    #[cfg(test)]
+    /// Schedule a future trigger at `samples_until` samples in the future.
+    /// `samples_until = 0` fires on the first sample of the next `process()`
+    /// call (= same-buffer immediate). Used to spread MIDI events that all
+    /// land at sample 0 (cpal/midir backend hardcodes timing) across the
+    /// buffer so rapid pad rolls render as separate hits instead of stacking.
     pub fn push_pending(&mut self, samples_until: u32) {
         self.push_pending_internal(samples_until);
     }
