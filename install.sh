@@ -93,6 +93,29 @@ if [ "$(uname -s)" = "Linux" ] && [ -f "$STANDALONE" ] && [ "$NO_DESKTOP" = "0" 
     echo "  Launcher   -> $BIN_DIR/niner-launch"
     echo "  Desktop    -> $DESKTOP_DIR/niner.desktop"
   fi
+
+  # Hicolor icons — the `Icon=niner` line in the .desktop entry resolves
+  # to these per-size PNGs. Silently skipped if the icon assets aren't in
+  # the archive (older tarballs).
+  ICON_SRC_DIR="$SCRIPT_DIR/assets/icon"
+  if [ -d "$ICON_SRC_DIR" ]; then
+    ICON_BASE="$HOME/.local/share/icons/hicolor"
+    ICON_INSTALLED=0
+    for sz in 16 32 48 128 256 512 1024; do
+      SRC="$ICON_SRC_DIR/niner-${sz}.png"
+      if [ -f "$SRC" ]; then
+        DEST_DIR="$ICON_BASE/${sz}x${sz}/apps"
+        mkdir -p "$DEST_DIR"
+        cp "$SRC" "$DEST_DIR/niner.png"
+        ICON_INSTALLED=1
+      fi
+    done
+    if [ "$ICON_INSTALLED" = 1 ]; then
+      command -v gtk-update-icon-cache >/dev/null 2>&1 \
+        && gtk-update-icon-cache -q -t -f "$ICON_BASE" 2>/dev/null || true
+      echo "  Icons      -> $ICON_BASE/*/apps/niner.png"
+    fi
+  fi
 fi
 
 echo ""

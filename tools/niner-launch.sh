@@ -78,18 +78,29 @@ if [ "${NINER_FORCE_BACKEND:-alsa}" != "jack" ] && command -v aconnect >/dev/nul
     PW_QUANTUM=""
     if command -v pw-metadata >/dev/null 2>&1; then
       PW_META=$(pw-metadata -n settings 0 2>/dev/null)
+      # PipeWire reports `0` for `clock.force-*` to mean "no override" —
+      # treat that the same as empty so we fall through to `clock.rate` /
+      # `clock.quantum` (the values the server is actually running at).
       PW_RATE=$(printf '%s\n' "$PW_META" \
         | sed -n "s/.*key:'clock\.force-rate' value:'\([0-9]*\)'.*/\1/p" \
         | head -n1)
-      [ -z "$PW_RATE" ] && PW_RATE=$(printf '%s\n' "$PW_META" \
-        | sed -n "s/.*key:'clock\.rate' value:'\([0-9]*\)'.*/\1/p" \
-        | head -n1)
+      [ "$PW_RATE" = "0" ] && PW_RATE=""
+      if [ -z "$PW_RATE" ]; then
+        PW_RATE=$(printf '%s\n' "$PW_META" \
+          | sed -n "s/.*key:'clock\.rate' value:'\([0-9]*\)'.*/\1/p" \
+          | head -n1)
+        [ "$PW_RATE" = "0" ] && PW_RATE=""
+      fi
       PW_QUANTUM=$(printf '%s\n' "$PW_META" \
         | sed -n "s/.*key:'clock\.force-quantum' value:'\([0-9]*\)'.*/\1/p" \
         | head -n1)
-      [ -z "$PW_QUANTUM" ] && PW_QUANTUM=$(printf '%s\n' "$PW_META" \
-        | sed -n "s/.*key:'clock\.quantum' value:'\([0-9]*\)'.*/\1/p" \
-        | head -n1)
+      [ "$PW_QUANTUM" = "0" ] && PW_QUANTUM=""
+      if [ -z "$PW_QUANTUM" ]; then
+        PW_QUANTUM=$(printf '%s\n' "$PW_META" \
+          | sed -n "s/.*key:'clock\.quantum' value:'\([0-9]*\)'.*/\1/p" \
+          | head -n1)
+        [ "$PW_QUANTUM" = "0" ] && PW_QUANTUM=""
+      fi
     fi
     PW_RATE="${PW_RATE:-48000}"
     PERIOD="${NINER_PERIOD_SIZE:-${PW_QUANTUM:-512}}"
