@@ -8,147 +8,9 @@
     "snap_grid": 2.0
   },
   "entries": {
-    "footer.hyperfocus_logo": {
-      "pos_offset_x": 434.0,
-      "pos_offset_y": -46.0,
-      "size_scale": 1.8133101,
-      "font_scale": 1.0
-    },
-    "master.comp_label": {
-      "pos_offset_x": -7.0,
-      "pos_offset_y": 0.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "row.eq.knobs": {
-      "pos_offset_x": 0.0,
-      "pos_offset_y": 9.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "screw.bl": {
-      "pos_offset_x": 3.0,
-      "pos_offset_y": 6.5,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "row.sub.knobs": {
-      "pos_offset_x": 0.0,
-      "pos_offset_y": 9.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "row.top.knobs": {
-      "pos_offset_x": 0.0,
-      "pos_offset_y": 10.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "header.preset_arrow_right": {
-      "pos_offset_x": 3.0,
-      "pos_offset_y": 0.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "header.preset_display": {
-      "pos_offset_x": -72.0,
-      "pos_offset_y": 0.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "label.top": {
-      "pos_offset_x": -6.0,
-      "pos_offset_y": -69.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "label.sub": {
-      "pos_offset_x": 0.0,
-      "pos_offset_y": -69.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "master.knobs": {
-      "pos_offset_x": 0.0,
-      "pos_offset_y": 1.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "header.test_btn": {
-      "pos_offset_x": 275.0,
-      "pos_offset_y": -0.5,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "header.niner_9": {
-      "pos_offset_x": 597.5,
-      "pos_offset_y": 302.5,
-      "size_scale": 1.4975818,
-      "font_scale": 1.0
-    },
-    "master.output_display": {
-      "pos_offset_x": 7.5,
-      "pos_offset_y": 2.5,
-      "size_scale": 1.0469228,
-      "font_scale": 1.0
-    },
-    "header.ui_scale": {
-      "pos_offset_x": 164.5,
-      "pos_offset_y": 19.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "screw.tl": {
-      "pos_offset_x": 3.0,
-      "pos_offset_y": -6.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "label.eq": {
-      "pos_offset_x": -7.0,
-      "pos_offset_y": -67.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "master.lim_chip": {
-      "pos_offset_x": 4.0,
-      "pos_offset_y": 59.5,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "header.del_btn": {
-      "pos_offset_x": 6.0,
-      "pos_offset_y": 0.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "seq.pads_cluster": {
-      "pos_offset_x": 0.0,
-      "pos_offset_y": 0.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "mid.clap_cluster": {
-      "pos_offset_x": -17.5,
-      "pos_offset_y": 7.5,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "top.precise_comp": {
+    "master.comp_macro": {
       "pos_offset_x": -4.0,
-      "pos_offset_y": 7.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "header.kick_synthesizer": {
-      "pos_offset_x": -57.5,
-      "pos_offset_y": -6.5,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "footer.feedback_link": {
-      "pos_offset_x": 3.0,
-      "pos_offset_y": -1.0,
+      "pos_offset_y": -2.0,
       "size_scale": 1.0,
       "font_scale": 1.0
     },
@@ -158,39 +20,27 @@
       "size_scale": 1.0,
       "font_scale": 1.0
     },
-    "filter.post_chip": {
-      "pos_offset_x": 3.0,
-      "pos_offset_y": 1.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "top.precise_label": {
-      "pos_offset_x": 0.0,
-      "pos_offset_y": 8.0,
-      "size_scale": 1.0,
-      "font_scale": 1.0
-    },
-    "header.niner_logo": {
-      "pos_offset_x": -20.0,
-      "pos_offset_y": 0.5,
-      "size_scale": 0.97433925,
-      "font_scale": 1.0
-    },
-    "master.comp_macro": {
-      "pos_offset_x": -4.0,
-      "pos_offset_y": -2.0,
+    "header.preset_display": {
+      "pos_offset_x": -72.0,
+      "pos_offset_y": 0.0,
       "size_scale": 1.0,
       "font_scale": 1.0
     },
     "header.version": {
-      "pos_offset_x": 0.5,
-      "pos_offset_y": -4.0,
+      "pos_offset_x": -3.5,
+      "pos_offset_y": -5.0,
       "size_scale": 1.0,
       "font_scale": 1.0
     },
-    "header.save_btn": {
-      "pos_offset_x": 4.0,
-      "pos_offset_y": 0.0,
+    "label.sub": {
+      "pos_offset_x": 0.0,
+      "pos_offset_y": -69.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "filter.post_chip": {
+      "pos_offset_x": 3.0,
+      "pos_offset_y": 1.0,
       "size_scale": 1.0,
       "font_scale": 1.0
     },
@@ -200,9 +50,45 @@
       "size_scale": 1.0,
       "font_scale": 1.0
     },
+    "master.lim_chip": {
+      "pos_offset_x": 4.0,
+      "pos_offset_y": 59.5,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "top.precise_comp": {
+      "pos_offset_x": -4.0,
+      "pos_offset_y": 7.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "top.precise_label": {
+      "pos_offset_x": 0.0,
+      "pos_offset_y": 8.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
     "label.sat": {
       "pos_offset_x": 0.0,
       "pos_offset_y": -67.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "row.eq.knobs": {
+      "pos_offset_x": 0.0,
+      "pos_offset_y": 9.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "footer.hyperfocus_logo": {
+      "pos_offset_x": 434.0,
+      "pos_offset_y": -46.0,
+      "size_scale": 1.8133101,
+      "font_scale": 1.0
+    },
+    "footer.feedback_link": {
+      "pos_offset_x": 3.0,
+      "pos_offset_y": -1.0,
       "size_scale": 1.0,
       "font_scale": 1.0
     },
@@ -212,9 +98,33 @@
       "size_scale": 1.0,
       "font_scale": 1.0
     },
-    "header.dice_btn": {
+    "header.preset_arrow_left": {
+      "pos_offset_x": -72.0,
+      "pos_offset_y": -0.5,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "row.top.knobs": {
       "pos_offset_x": 0.0,
-      "pos_offset_y": -1.0,
+      "pos_offset_y": 10.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "header.del_btn": {
+      "pos_offset_x": 6.0,
+      "pos_offset_y": 0.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "header.kick_synthesizer": {
+      "pos_offset_x": -57.5,
+      "pos_offset_y": -6.5,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "screw.bl": {
+      "pos_offset_x": 3.0,
+      "pos_offset_y": 6.5,
       "size_scale": 1.0,
       "font_scale": 1.0
     },
@@ -224,15 +134,45 @@
       "size_scale": 1.0,
       "font_scale": 1.0
     },
-    "screw.tr": {
-      "pos_offset_x": -3.0,
-      "pos_offset_y": -6.0,
+    "master.output_display": {
+      "pos_offset_x": 7.5,
+      "pos_offset_y": 2.5,
+      "size_scale": 1.0469228,
+      "font_scale": 1.0
+    },
+    "row.sub.knobs": {
+      "pos_offset_x": 0.0,
+      "pos_offset_y": 9.0,
       "size_scale": 1.0,
       "font_scale": 1.0
     },
-    "header.preset_arrow_left": {
-      "pos_offset_x": -72.0,
-      "pos_offset_y": -0.5,
+    "master.comp_label": {
+      "pos_offset_x": -7.0,
+      "pos_offset_y": 0.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "header.niner_logo": {
+      "pos_offset_x": -20.0,
+      "pos_offset_y": 0.5,
+      "size_scale": 0.97433925,
+      "font_scale": 1.0
+    },
+    "master.knobs": {
+      "pos_offset_x": 0.0,
+      "pos_offset_y": 1.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "header.ui_scale": {
+      "pos_offset_x": 149.5,
+      "pos_offset_y": 6.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "mid.clap_cluster": {
+      "pos_offset_x": -17.5,
+      "pos_offset_y": 7.5,
       "size_scale": 1.0,
       "font_scale": 1.0
     },
@@ -242,9 +182,69 @@
       "size_scale": 1.0,
       "font_scale": 1.0
     },
+    "label.top": {
+      "pos_offset_x": -6.0,
+      "pos_offset_y": -69.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "label.eq": {
+      "pos_offset_x": -7.0,
+      "pos_offset_y": -67.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "screw.tr": {
+      "pos_offset_x": -3.0,
+      "pos_offset_y": -6.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
     "label.mid": {
       "pos_offset_x": 0.0,
       "pos_offset_y": -69.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "header.preset_arrow_right": {
+      "pos_offset_x": 3.0,
+      "pos_offset_y": 0.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "header.test_btn": {
+      "pos_offset_x": 275.0,
+      "pos_offset_y": -0.5,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "header.dice_btn": {
+      "pos_offset_x": 0.0,
+      "pos_offset_y": -1.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "header.niner_9": {
+      "pos_offset_x": 597.5,
+      "pos_offset_y": 302.5,
+      "size_scale": 1.4975818,
+      "font_scale": 1.0
+    },
+    "seq.pads_cluster": {
+      "pos_offset_x": 0.0,
+      "pos_offset_y": 0.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "header.save_btn": {
+      "pos_offset_x": 4.0,
+      "pos_offset_y": 0.0,
+      "size_scale": 1.0,
+      "font_scale": 1.0
+    },
+    "screw.tl": {
+      "pos_offset_x": 3.0,
+      "pos_offset_y": -6.0,
       "size_scale": 1.0,
       "font_scale": 1.0
     }

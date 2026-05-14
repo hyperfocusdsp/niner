@@ -956,7 +956,7 @@ pub fn draw_sub_top_row(
                 ui,
                 setter,
                 "t_bw",
-                "bandwidth",
+                "BANDW",
                 &params.top_bw,
                 0.2,
                 3.0,

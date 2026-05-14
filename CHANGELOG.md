@@ -2,6 +2,51 @@
 
 All notable changes to Niner (formerly Slammer) are documented here.
 
+## [0.7.8] — 2026-05-14
+
+### Changed
+
+- **TOP/BANDW label** — the `bandwidth` knob legend is now `BANDW`,
+  fits one line, and matches the all-caps style of its row neighbours
+  (GAIN/DECAY/FREQ/METAL).
+- **Header alignment** — the `UI N×` scale badge and the `vX.Y.Z`
+  version text are now x-aligned (vertically stacked at the same
+  anchor), so the top-right corner reads as a single label group.
+- **Layout overrides re-baked** into `assets/baked_layout.json` so the
+  shipped binary picks up the latest hand-tuned positions without
+  needing the layout editor compiled in.
+
+### Fixed
+
+- **`.desktop` launcher** ships the `Icon=` line so app menus pick up
+  the brand icon. Hicolor icon set is installed alongside.
+- **PipeWire `0` device handling** in `niner-launch` no longer fights
+  the autodetect path.
+
+### Tests
+
+- Golden determinism `kick_loop_5s_heavy` is skipped on CI to absorb
+  the 1-ULP cross-distro libm drift seen on Ubuntu (`LIBM_SENSITIVE_PRESETS`
+  + `CI=true` env gate; same pattern as the lighter `kick_loop_5s`).
+
+### Marketing
+
+- `screenshots/` folder added with three sizes shipped at 1× / 1.5× / 2×
+  (680×444 / 1020×666 / 1360×888), waveform live, EXIF-stripped PNG
+  + lossless WebP for each.
+
+## [0.7.7] — 2026-05-10
+
+### Fixed
+
+- **Header lockup regression** from v0.7.6: the dev-saved layout
+  overrides hadn't been baked into `assets/baked_layout.json`, so end
+  users got the unbaked baseline positions and the new "9" model-badge
+  rendered top-left next to the NINER wordmark instead of bottom-right
+  next to the POST stars. v0.7.7 re-ran `cargo xtask lock-layout` to
+  pull all ~30 accumulated dev nudges (chrome, label offsets, screw
+  alignment, the "9" badge slot) into the shipped asset.
+
 ## [0.7.6] — 2026-05-10
 
 ### Added
