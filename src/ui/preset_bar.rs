@@ -166,9 +166,17 @@ impl PresetBar {
         }
         let len = self.cached.len();
         let idx = if delta < 0 {
-            if self.state.selected_index == 0 { len - 1 } else { self.state.selected_index - 1 }
+            if self.state.selected_index == 0 {
+                len - 1
+            } else {
+                self.state.selected_index - 1
+            }
         } else {
-            if self.state.selected_index >= len - 1 { 0 } else { self.state.selected_index + 1 }
+            if self.state.selected_index >= len - 1 {
+                0
+            } else {
+                self.state.selected_index + 1
+            }
         };
         let entry = self.cached[idx].clone();
         self.state.selected_index = idx;
