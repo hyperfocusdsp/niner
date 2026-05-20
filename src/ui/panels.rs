@@ -856,7 +856,7 @@ pub fn draw_sub_top_row(
                 20.0,
                 800.0,
                 150.0,
-                |v| format!("{v:.0}Hz"),
+                |v| format!("{v:.0}H"),
                 KNOB_SIZE,
                 theme::SECTION_SUB,
             );
@@ -869,7 +869,7 @@ pub fn draw_sub_top_row(
                 20.0,
                 400.0,
                 45.0,
-                |v| format!("{v:.0}Hz"),
+                |v| format!("{v:.0}H"),
                 KNOB_SIZE,
                 theme::SECTION_SUB,
             );
@@ -948,7 +948,7 @@ pub fn draw_sub_top_row(
                 1000.0,
                 8000.0,
                 3500.0,
-                |v| format!("{v:.0}Hz"),
+                |v| format!("{v:.0}H"),
                 KNOB_SIZE,
                 theme::SECTION_TOP,
             );
@@ -1165,7 +1165,7 @@ pub fn draw_mid_row(
                 100.0,
                 2000.0,
                 400.0,
-                |v| format!("{v:.0}Hz"),
+                |v| format!("{v:.0}H"),
                 KNOB_SIZE,
                 theme::SECTION_MID,
             );
@@ -1178,7 +1178,7 @@ pub fn draw_mid_row(
                 50.0,
                 800.0,
                 120.0,
-                |v| format!("{v:.0}Hz"),
+                |v| format!("{v:.0}H"),
                 KNOB_SIZE,
                 theme::SECTION_MID,
             );
@@ -1666,7 +1666,7 @@ pub fn draw_sat_eq_row(
                 100.0,
                 600.0,
                 250.0,
-                |v| format!("{v:.0}Hz"),
+                |v| format!("{v:.0}H"),
                 KNOB_SIZE,
                 theme::SECTION_EQ,
             );

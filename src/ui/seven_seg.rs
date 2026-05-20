@@ -348,6 +348,14 @@ pub fn lcd_selector(
             setter.end_set_parameter(param);
         }
 
+        // MIDI learn: right-click the LCD body to bind a CC or note.
+        let lcd_ml_resp = ui.interact(
+            lcd_rect,
+            egui::Id::new((id_source, "midi_learn")),
+            egui::Sense::click(),
+        );
+        crate::ui::widgets::attach_midi_learn_menu_for_param(&lcd_ml_resp, param);
+
         if trailing_pad > 0.0 {
             ui.add_space(trailing_pad);
         }

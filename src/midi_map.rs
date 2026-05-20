@@ -126,6 +126,10 @@ pub mod sentinel {
     pub const TEMPO: &str = "__niner_tempo";
     /// Toggle the standalone sequencer's running flag (rising-edge only).
     pub const SEQ_PLAY: &str = "__niner_seq_play";
+    /// Step to the previous preset (rising-edge).
+    pub const PRESET_PREV: &str = "__niner_preset_prev";
+    /// Step to the next preset (rising-edge).
+    pub const PRESET_NEXT: &str = "__niner_preset_next";
 }
 
 /// Decode a normalized CC value (`0.0..=1.0`) into a signed step count

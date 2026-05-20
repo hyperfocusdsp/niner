@@ -15,8 +15,9 @@ use crate::params::{NinerParams, ParamSnapshot};
 use crate::presets::{PresetEntry, PresetManager};
 use crate::ui::theme;
 use crate::ui::widgets::{
-    display_reflection_handle, draw_inset_display, draw_inset_display_no_glass,
-    paint_display_reflection, preset_arrow_btn, DisplayInsets, DISPLAY_BAKED,
+    attach_midi_learn_menu_for_target, display_reflection_handle, draw_inset_display,
+    draw_inset_display_no_glass, fetch_midi_learn_ctx, paint_display_reflection, preset_arrow_btn,
+    DisplayInsets, DISPLAY_BAKED,
 };
 
 // Dropdown geometry constants. Single source of truth — used by both the
@@ -157,6 +158,25 @@ impl PresetBar {
         }
     }
 
+    /// Cycle preset by `delta` steps (negative = prev, positive = next).
+    /// Called from the MIDI learn sentinel handler in editor.rs.
+    pub fn step(&mut self, delta: i32, setter: &ParamSetter, params: &NinerParams) {
+        if self.cached.is_empty() {
+            return;
+        }
+        let len = self.cached.len();
+        let idx = if delta < 0 {
+            if self.state.selected_index == 0 { len - 1 } else { self.state.selected_index - 1 }
+        } else {
+            if self.state.selected_index >= len - 1 { 0 } else { self.state.selected_index + 1 }
+        };
+        let entry = self.cached[idx].clone();
+        self.state.selected_index = idx;
+        self.state.selected_name = entry.name.clone();
+        entry.params.apply(setter, params);
+        crate::presets::save_last_preset_name(&entry.name);
+    }
+
     /// Layout + event-handling for the preset bar inside the header strip.
     ///
     /// `header_center_y` is the vertical center of the header band;
@@ -242,6 +262,13 @@ impl PresetBar {
                 let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 1.5);
                 preset_arrow_btn(ui.painter(), left_rect, "\u{25C2}", color, press_amount, r);
             }
+            if let Some(learn) = fetch_midi_learn_ctx(ui.ctx()) {
+                attach_midi_learn_menu_for_target(
+                    &left_resp,
+                    &learn,
+                    crate::midi_map::sentinel::PRESET_PREV,
+                );
+            }
             if left_resp.clicked() && !self.cached.is_empty() {
                 let idx = if self.state.selected_index == 0 {
                     self.cached.len() - 1
@@ -314,6 +341,13 @@ impl PresetBar {
                 );
                 let r = crate::ui::layout_overrides::chrome_rounding(ui.ctx(), 1.5);
                 preset_arrow_btn(ui.painter(), right_rect, "\u{25B8}", color, press_amount, r);
+            }
+            if let Some(learn) = fetch_midi_learn_ctx(ui.ctx()) {
+                attach_midi_learn_menu_for_target(
+                    &right_resp,
+                    &learn,
+                    crate::midi_map::sentinel::PRESET_NEXT,
+                );
             }
             if right_resp.clicked() && !self.cached.is_empty() {
                 let idx = if self.state.selected_index >= self.cached.len() - 1 {

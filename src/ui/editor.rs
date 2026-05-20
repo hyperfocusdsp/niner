@@ -482,6 +482,30 @@ pub fn create(
                                 }
                                 continue;
                             }
+                            sentinel::PRESET_PREV => {
+                                let trigger = match encoding {
+                                    CcEncoding::Absolute => value > 0.5,
+                                    CcEncoding::BinaryOffset | CcEncoding::Centered => {
+                                        decode_relative_delta(value, encoding) != 0
+                                    }
+                                };
+                                if trigger {
+                                    preset_bar.lock().step(-1, setter, &params);
+                                }
+                                continue;
+                            }
+                            sentinel::PRESET_NEXT => {
+                                let trigger = match encoding {
+                                    CcEncoding::Absolute => value > 0.5,
+                                    CcEncoding::BinaryOffset | CcEncoding::Centered => {
+                                        decode_relative_delta(value, encoding) != 0
+                                    }
+                                };
+                                if trigger {
+                                    preset_bar.lock().step(1, setter, &params);
+                                }
+                                continue;
+                            }
                             _ => {}
                         }
 
@@ -703,7 +727,16 @@ pub fn create(
                             if let Ok(img) = image::load_from_memory(bytes) {
                                 let rgba = img.to_rgba8();
                                 let (w, h) = rgba.dimensions();
-                                let pixels = rgba.into_raw();
+                                let mut pixels = rgba.into_raw();
+                                // Recolor oxide-red → brand amber (#d49526).
+                                // The PNG uses the red channel as brightness;
+                                // map it to the amber hue so no new asset is needed.
+                                for chunk in pixels.chunks_mut(4) {
+                                    let r = chunk[0] as f32 / 255.0;
+                                    chunk[0] = (0xd4u8 as f32 * r) as u8;
+                                    chunk[1] = (0x95u8 as f32 * r) as u8;
+                                    chunk[2] = (0x26u8 as f32 * r) as u8;
+                                }
                                 let color_image = egui::ColorImage::from_rgba_unmultiplied(
                                     [w as usize, h as usize],
                                     &pixels,
@@ -792,72 +825,6 @@ pub fn create(
 
                     // UI scale badge — discreet click-to-cycle, lives in the
                     // header to the left of "KICK SYNTHESIZER" so the footer
-                    // chrome stays clean. Mirrors the SquelchBox `band1.rs`
-                    // pattern; the new value is mirrored to a sidecar file so
-                    // `niner-launch` can forward it as `--dpi-scale` on the
-                    // next standalone launch (DAWs honour `#[persist]` directly).
-                    {
-                        let scale = *params.ui_scale.lock();
-                        let scale_text = if (scale - scale.round()).abs() < 0.05 {
-                            format!("UI {:.0}×", scale)
-                        } else {
-                            format!("UI {:.1}×", scale)
-                        };
-                        // UI 1× badge sits between TEST and KICK SYNTHESIZER,
-                        // anchored to TEST's rendered right edge so it follows
-                        // when TEST is repositioned in the layout editor.
-                        let test_right = panel_rect.left()
-                            + CONTENT_LEFT
-                            + 111.0
-                            + 40.0
-                            + crate::ui::layout_overrides::offset_for(ctx, "header.test_btn").x;
-                        let badge_w = 50.0;
-                        let badge_h = 14.0;
-                        let base_badge_pos = egui::pos2(test_right + 8.0, header_center_y);
-                        let badge_pos = crate::ui::layout_overrides::instrument_text(
-                            ui,
-                            "header.ui_scale",
-                            base_badge_pos,
-                            egui::vec2(badge_w, badge_h),
-                            egui::Align2::LEFT_CENTER,
-                        );
-                        let hit = egui::Rect::from_min_size(
-                            egui::pos2(badge_pos.x, badge_pos.y - badge_h * 0.5),
-                            egui::vec2(badge_w, badge_h),
-                        );
-                        let resp = ui
-                            .interact(hit, egui::Id::new("ui_scale_btn"), egui::Sense::click())
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .on_hover_text(
-                                "UI scale — click to cycle (1× / 1.5× / 2×).\n\
-                                 Reopen the plugin (or restart niner) to apply.",
-                            );
-                        let color = if resp.hovered() {
-                            theme::WHITE
-                        } else {
-                            theme::TEXT_DIM
-                        };
-                        ui.painter().text(
-                            badge_pos,
-                            egui::Align2::LEFT_CENTER,
-                            &scale_text,
-                            egui::FontId::new(8.0, egui::FontFamily::Monospace),
-                            color,
-                        );
-                        if resp.clicked() {
-                            let mut lock = params.ui_scale.lock();
-                            let next = match *lock {
-                                v if v < 1.25 => 1.5,
-                                v if v < 1.75 => 2.0,
-                                _ => 1.0,
-                            };
-                            *lock = next;
-                            crate::util::paths::save_ui_scale(next);
-                            tracing::info!(
-                                "[ui_scale] cycled → {next}× (saved; reopen plugin to apply)"
-                            );
-                        }
-                    }
 
                     // Diagnostic: log the first few key events so we can
                     // tell whether keys are reaching egui at all on Windows.
@@ -1043,16 +1010,15 @@ pub fn create(
                         master_row.draw(ui, setter, &params, panel_rect);
                     }
 
-                    // BPM readout — anchored to the lower-left corner of
-                    // the master display's lit area so it reads as part of
-                    // the screen, like a real piece of hardware shows
-                    // tempo on its main LCD. Follows the display when the
-                    // user drags it via the layout editor; can also be
-                    // dragged independently via its own "master.bpm" key.
+                    // BPM (lower-left) + UI scale (lower-right) — both
+                    // anchored to the master display's lit area so they
+                    // read as part of the screen.
                     {
                         let lit = crate::ui::widgets::lit_rect_default(
                             wf_left, master_y, wf_width, wf_height,
                         );
+
+                        // BPM readout — lower-left.
                         let bpm_pos = crate::ui::layout_overrides::instrument_text(
                             ui,
                             "master.bpm",
@@ -1068,6 +1034,61 @@ pub fn create(
                             sequencer.is_host_synced(),
                             &mut seq_ui.tempo_edit,
                         );
+                        drop(seq_ui);
+
+                        // UI scale — lower-right, same style as BPM so
+                        // users can discover it without hunting the header.
+                        {
+                            let scale = *params.ui_scale.lock();
+                            let scale_text = if (scale - scale.round()).abs() < 0.05 {
+                                format!("UI {:.0}x", scale)
+                            } else {
+                                format!("UI {:.1}x", scale)
+                            };
+                            let ui_pos = crate::ui::layout_overrides::instrument_text(
+                                ui,
+                                "master.ui_scale",
+                                egui::pos2(lit.right() - 2.0, lit.bottom() - 12.0),
+                                egui::vec2(50.0, 12.0),
+                                egui::Align2::RIGHT_TOP,
+                            );
+                            let hit = egui::Rect::from_min_size(
+                                egui::pos2(ui_pos.x - 48.0, ui_pos.y),
+                                egui::vec2(50.0, 12.0),
+                            );
+                            let ui_resp = ui
+                                .interact(hit, egui::Id::new("ui_scale_btn"), egui::Sense::click())
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .on_hover_text(
+                                    "UI scale — click to cycle (1x / 1.5x / 2x).\n\
+                                     Reopen the plugin to apply.",
+                                );
+                            let color = if ui_resp.hovered() {
+                                theme::WHITE
+                            } else {
+                                theme::RED_LED
+                            };
+                            ui.painter().text(
+                                ui_pos,
+                                egui::Align2::RIGHT_TOP,
+                                &scale_text,
+                                egui::FontId::new(9.0, egui::FontFamily::Monospace),
+                                color,
+                            );
+                            if ui_resp.clicked() {
+                                let mut lock = params.ui_scale.lock();
+                                let next = match *lock {
+                                    v if v < 1.25 => 1.5,
+                                    v if v < 1.75 => 2.0,
+                                    _ => 1.0,
+                                };
+                                *lock = next;
+                                crate::util::paths::save_ui_scale(next);
+                                tracing::info!(
+                                    "[ui_scale] cycled → {next}x (saved; reopen plugin to apply)"
+                                );
+                            }
+                        }
                     }
 
                     // ===== Three knob rows =====
