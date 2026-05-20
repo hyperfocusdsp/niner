@@ -569,9 +569,11 @@ impl<'a> MasterRow<'a> {
             let now = std::time::Instant::now();
             if now < expires {
                 ui.ctx().request_repaint_after(expires - now);
+                // Right edge stops ~54 px short of lit.right() so the
+                // "UI 1x" label in the lower-right corner doesn't overlap.
                 let readout_rect = egui::Rect::from_min_size(
-                    egui::pos2(lit.right() - 158.0, lit.bottom() - 16.0),
-                    egui::vec2(156.0, 14.0),
+                    egui::pos2(lit.right() - 200.0, lit.bottom() - 16.0),
+                    egui::vec2(146.0, 14.0),
                 );
                 crate::ui::seven_seg::draw_7seg_text(ui.painter(), readout_rect, &text);
             }
