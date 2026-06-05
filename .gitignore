@@ -1,4 +1,5 @@
 /target
 .superpowers/
 .claude/
+.codegraph/
 tools/layout-editor.html

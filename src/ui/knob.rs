@@ -1,6 +1,20 @@
 use crate::ui::theme;
 use nih_plug_egui::egui;
 
+/// One-time read of `NINER_ALIGN_TEMPLATE`. When set to `1`/`true`, knobs
+/// render as magenta alignment rings instead of normal caps — a dev aid for
+/// authoring background faceplate art that matches the fixed knob grid.
+fn align_template_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        matches!(
+            std::env::var("NINER_ALIGN_TEMPLATE").as_deref(),
+            Ok("1") | Ok("true")
+        )
+    })
+}
+
 pub struct KnobResponse {
     pub changed: bool,
     pub reset: bool,
@@ -362,16 +376,51 @@ fn knob_inner(
                     );
                 });
             }
+
+            // Alignment-template overlay: when `NINER_ALIGN_TEMPLATE=1`, draw
+            // a bright magenta ring + crosshair at each knob's *actual* center
+            // and radius, on top of everything. Screenshot it to get a
+            // pixel-exact spec of where every knob lands, so background
+            // faceplate art can be authored to match the fixed code grid.
+            // Off in normal runs (one-time env read).
+            if align_template_enabled() {
+                let m = egui::Color32::from_rgb(0xff, 0x00, 0xff);
+                painter.circle_stroke(center, radius, egui::Stroke::new(1.5, m));
+                painter.circle_filled(center, 1.5, m);
+                painter.line_segment(
+                    [
+                        center - egui::vec2(radius + 3.0, 0.0),
+                        center + egui::vec2(radius + 3.0, 0.0),
+                    ],
+                    egui::Stroke::new(0.75, m),
+                );
+                painter.line_segment(
+                    [
+                        center - egui::vec2(0.0, radius + 3.0),
+                        center + egui::vec2(0.0, radius + 3.0),
+                    ],
+                    egui::Stroke::new(0.75, m),
+                );
+            }
         }
 
-        // Label below
+        // Label below. The bare faceplate art carries no baked-in knob
+        // labels, so the code draws them (grid-locked by construction). Set
+        // `false` only if a future chassis bakes its own knob labels.
+        const SHOW_KNOB_LABELS: bool = true;
         ui.add_space(label_gap);
         ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-            ui.label(
-                egui::RichText::new(label)
-                    .font(egui::FontId::new(9.5, egui::FontFamily::Monospace))
-                    .color(theme::WHITE),
-            );
+            if SHOW_KNOB_LABELS {
+                ui.label(
+                    egui::RichText::new(label)
+                        .font(egui::FontId::new(9.5, egui::FontFamily::Monospace))
+                        .color(theme::WHITE),
+                );
+            } else {
+                // Reserve the same vertical extent the label would occupy
+                // so the knob box height (and thus row layout) is identical.
+                ui.add_space(9.5);
+            }
         });
     });
 

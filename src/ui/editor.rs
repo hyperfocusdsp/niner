@@ -169,7 +169,6 @@ pub fn create(
     // drain the outcome once the thread finishes.
     let bounce_inflight: Arc<Mutex<Option<mpsc::Receiver<ExportOutcome>>>> =
         Arc::new(Mutex::new(None));
-    let editor_state_clone = Arc::clone(&editor_state);
     // Visually smoothed GR meter value — instant attack, slow release, held
     // across frames so the bar doesn't flicker between audio buffers.
     let gr_display = Arc::new(Mutex::new(0.0f32));
@@ -282,32 +281,17 @@ pub fn create(
             crate::ui::layout_overrides::init(ctx);
         },
         move |ctx, setter, _state| {
-            // UI scale (1.0 / 1.5 / 2.0). We drive both egui's content zoom
-            // and a matching programmatic window resize from a single value,
-            // so the scale badge works identically in a DAW and standalone.
-            //
-            // Baseview's native scale is pinned to 1.0 (DAW hosts default to
-            // it; the standalone launcher passes `--dpi-scale 1.0`), so the
-            // effective pixels-per-point is exactly `scale`: the host window
-            // grows to BASE × scale physical pixels while the layout keeps
-            // drawing into a fixed BASE logical space. Uniform scale, no
-            // reflow — knob rows never move relative to each other.
-            //
-            // `set_zoom_factor` is cheap and idempotent per frame; the resize
-            // request only fires when the stored size actually differs, so a
-            // settled scale costs one comparison.
-            {
-                let scale = (*params.ui_scale.lock()).clamp(1.0, 2.0);
-                ctx.set_zoom_factor(scale);
-                let (bw, bh) = crate::params::BASE_WINDOW_SIZE;
-                let want = (
-                    (bw as f32 * scale).round() as u32,
-                    (bh as f32 * scale).round() as u32,
-                );
-                if editor_state_clone.size() != want {
-                    editor_state_clone.set_requested_size(want);
-                }
-            }
+            // UI scale (1.0 / 1.5 / 2.0) is driven by baseview's *native* scale
+            // factor — NOT egui's zoom. This egui-baseview tessellates at its
+            // own `pixels_per_point` (the baseview scale policy) and ignores
+            // `ctx.set_zoom_factor()`, so driving zoom only desyncs layout vs.
+            // tessellation (the "pixels_per_point changed" warning) and leaves
+            // content at 1×. Instead the standalone launcher forwards the saved
+            // factor as `--dpi-scale $SCALE`; the window opens at the logical
+            // BASE size (see params.rs) and baseview renders it at BASE × scale.
+            // The in-GUI badge persists the factor and applies on the next open.
+            // (Live in-DAW rescale would need an egui-baseview patch to render
+            // at the zoom-aware ppp — tracked as a follow-up.)
 
             // Invalidate texture caches when the egui::Context changes. The
             // `Arc<Mutex<Option<TextureHandle>>>`s captured above outlive any
@@ -739,8 +723,15 @@ pub fn create(
                     let wordmark_w = lockup_h * (342.0 / 80.0); // ~85.5 px
                     let lockup_gap = 5.0;
 
+                    // The faceplate art already carries a baked-in NINER
+                    // wordmark + "9" badge, so the live header lockup is
+                    // suppressed to avoid a doubled / misaligned logo. Flip
+                    // to `true` to restore the procedural lockup for a
+                    // logo-less chassis.
+                    const SHOW_HEADER_LOGO: bool = false;
+
                     // "9" badge — sits at CONTENT_LEFT, left of the wordmark.
-                    {
+                    if SHOW_HEADER_LOGO {
                         let mut tex = nine_badge_texture.lock();
                         if tex.is_none() {
                             let bytes = include_bytes!("../../assets/niner_9.png");
@@ -797,7 +788,7 @@ pub fn create(
                     }
 
                     // NINER wordmark — sits to the right of the "9" badge.
-                    {
+                    if SHOW_HEADER_LOGO {
                         let mut tex = logo_texture.lock();
                         if tex.is_none() {
                             let bytes = include_bytes!("../../assets/niner_logo.png");
@@ -1079,7 +1070,9 @@ pub fn create(
                             let ui_resp = ui
                                 .interact(hit, egui::Id::new("ui_scale_btn"), egui::Sense::click())
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .on_hover_text("UI scale — click to cycle (1x / 1.5x / 2x).");
+                                .on_hover_text(
+                                    "UI scale — click to cycle (1x / 1.5x / 2x). Reopen the plugin to apply.",
+                                );
                             let color = if ui_resp.hovered() {
                                 theme::WHITE
                             } else {
@@ -1101,7 +1094,7 @@ pub fn create(
                                 };
                                 *lock = next;
                                 crate::util::paths::save_ui_scale(next);
-                                tracing::info!("[ui_scale] cycled → {next}x (applied live)");
+                                tracing::info!("[ui_scale] saved → {next}x (applies on plugin reopen)");
                             }
                         }
                     }

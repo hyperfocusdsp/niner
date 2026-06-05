@@ -18,6 +18,11 @@ use crate::ui::widgets::{
     draw_rack_ear, draw_screw, lit_rect_default, param_knob, param_knob_compact,
 };
 
+/// The bare faceplate art carries no baked-in section labels, so the live
+/// UI draws SUB/TOP/MID/SAT/EQ itself (grid-locked by construction). Set
+/// `false` only if a future chassis bakes its own section labels.
+pub const SHOW_SECTION_LABELS: bool = true;
+
 pub const KNOB_SIZE: f32 = 32.0;
 pub const KNOB_SPACING: f32 = 52.0;
 pub const RACK_EAR_W: f32 = 16.0;
@@ -184,18 +189,23 @@ pub fn draw_chrome(
         }
     }
 
+    // The bare faceplate art has no baked corner hardware, so the procedural
+    // hex screws are drawn. Set `false` for a screw-less chassis.
+    const SHOW_CORNER_SCREWS: bool = true;
     // Draw hex screws on top of chassis (always, regardless of bake state).
-    for i in 0..4 {
-        let (bx, by) = screw_bases[i];
-        let off = screw_offsets[i];
-        let scale = screw_scales[i];
-        crate::ui::widgets::draw_hex_screw(
-            painter,
-            bx + off.x,
-            by + off.y,
-            SCREW_R * scale,
-            SCREW_BASE_ANGLES[i],
-        );
+    if SHOW_CORNER_SCREWS {
+        for i in 0..4 {
+            let (bx, by) = screw_bases[i];
+            let off = screw_offsets[i];
+            let scale = screw_scales[i];
+            crate::ui::widgets::draw_hex_screw(
+                painter,
+                bx + off.x,
+                by + off.y,
+                SCREW_R * scale,
+                SCREW_BASE_ANGLES[i],
+            );
+        }
     }
 
     painter.text(
@@ -1099,20 +1109,22 @@ pub fn draw_sub_top_row(
         egui::Align2::LEFT_TOP,
     );
     let painter = ui.painter();
-    painter.text(
-        sub_pos,
-        egui::Align2::LEFT_TOP,
-        "SUB",
-        row_label_font.clone(),
-        theme::WHITE,
-    );
-    painter.text(
-        top_pos,
-        egui::Align2::LEFT_TOP,
-        "TOP",
-        row_label_font,
-        theme::WHITE,
-    );
+    if SHOW_SECTION_LABELS {
+        painter.text(
+            sub_pos,
+            egui::Align2::LEFT_TOP,
+            "SUB",
+            row_label_font.clone(),
+            theme::WHITE,
+        );
+        painter.text(
+            top_pos,
+            egui::Align2::LEFT_TOP,
+            "TOP",
+            row_label_font,
+            theme::WHITE,
+        );
+    }
 
     row_knob_y + KNOB_SIZE + 34.0
 }
@@ -1407,13 +1419,15 @@ pub fn draw_mid_row(
         egui::vec2(40.0, 14.0),
         egui::Align2::LEFT_TOP,
     );
-    ui.painter().text(
-        mid_pos,
-        egui::Align2::LEFT_TOP,
-        "MID",
-        crate::ui::layout_overrides::label_font(ui.ctx(), 11.0),
-        theme::WHITE,
-    );
+    if SHOW_SECTION_LABELS {
+        ui.painter().text(
+            mid_pos,
+            egui::Align2::LEFT_TOP,
+            "MID",
+            crate::ui::layout_overrides::label_font(ui.ctx(), 11.0),
+            theme::WHITE,
+        );
+    }
 
     row_knob_y + KNOB_SIZE + 34.0
 }
@@ -1474,20 +1488,22 @@ pub fn draw_sat_eq_row(
         // second sub-row of the SAT cluster but above the sat_eq_return
         // boundary — i.e., still inside the SAT section. EQ stays at the
         // top-left of its sub-section.
-        painter.text(
-            sat_label_pos,
-            egui::Align2::LEFT_TOP,
-            "SAT",
-            row_label_font.clone(),
-            theme::WHITE,
-        );
-        painter.text(
-            eq_label_pos,
-            egui::Align2::LEFT_TOP,
-            "EQ",
-            row_label_font,
-            theme::WHITE,
-        );
+        if SHOW_SECTION_LABELS {
+            painter.text(
+                sat_label_pos,
+                egui::Align2::LEFT_TOP,
+                "SAT",
+                row_label_font.clone(),
+                theme::WHITE,
+            );
+            painter.text(
+                eq_label_pos,
+                egui::Align2::LEFT_TOP,
+                "EQ",
+                row_label_font,
+                theme::WHITE,
+            );
+        }
         draw_groove(
             painter,
             panel_rect.left() + CONTENT_LEFT - 4.0,

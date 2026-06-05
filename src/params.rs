@@ -377,20 +377,17 @@ pub const BASE_WINDOW_SIZE: (u32, u32) = (680, 444);
 
 impl Default for NinerParams {
     fn default() -> Self {
-        // The window opens at the saved UI scale. Baseview's native scale is
-        // pinned to 1.0 (DAW hosts default to it; the standalone launcher
-        // passes `--dpi-scale 1.0`), so the editor drives all scaling itself
-        // via egui's zoom factor plus a matching window resize (see
-        // `ui::editor`). Opening pre-scaled here avoids a first-frame resize
-        // flash; the editor keeps the window in sync when the badge changes.
+        // The window opens at the logical BASE size. Scaling is applied by
+        // baseview's *native* scale factor (standalone: the launcher forwards
+        // the saved factor as `--dpi-scale $SCALE`; DAW: the host's scale), and
+        // egui-baseview renders the BASE logical space at BASE × scale. We must
+        // NOT pre-multiply by `ui_scale` here or the window would scale twice
+        // (logical × ppp). `ui_scale` is still kept for the badge readout.
         let ui_scale = crate::util::paths::load_ui_scale();
         let (bw, bh) = BASE_WINDOW_SIZE;
 
         Self {
-            editor_state: EguiState::from_size(
-                (bw as f32 * ui_scale).round() as u32,
-                (bh as f32 * ui_scale).round() as u32,
-            ),
+            editor_state: EguiState::from_size(bw, bh),
 
             seq_steps: Arc::new(Mutex::new(DEFAULT_STEP_BITS)),
             seq_accents: Arc::new(Mutex::new(DEFAULT_ACCENT_BITS)),
