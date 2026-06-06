@@ -2,11 +2,12 @@
 # niner-launch — desktop-launcher shim for the standalone.
 #
 # What it does:
-#   1. Reads the persisted UI scale from `$XDG_DATA_HOME/niner/ui_scale.txt`
-#      (the in-GUI scale badge writes it) and forwards it as baseview's native
-#      scale: `--dpi-scale $SCALE`. egui-baseview renders the plugin's logical
-#      BASE size at that ppp. (Applies at launch — relaunch after changing the
-#      badge. `set_zoom_factor` does NOT work with this egui-baseview.)
+#   1. Reads the saved UI scale from `$XDG_DATA_HOME/niner/ui_scale.txt` and
+#      passes it to baseview as `--dpi-scale <scale>`. In the standalone the
+#      plugin does NOT zoom/resize itself (that path is DAW-only — the fork's
+#      resize command over-sizes a host-less window), so baseview's native
+#      scale IS the UI scale here. A scale change made via the in-GUI badge is
+#      written to that file and applied on the next launch.
 #   2. Picks an audio backend, sets up MIDI auto-routing, and execs
 #      niner-standalone. Default is `--backend alsa` because:
 #        * PipeWire's ALSA bridge auto-routes niner's audio to the default
@@ -47,12 +48,21 @@
 set -u
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
-SCALE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/niner/ui_scale.txt"
-SCALE=$(tr -d ' \n' < "$SCALE_FILE" 2>/dev/null || true)
-SCALE="${SCALE:-1.0}"
 
 STANDALONE="$BIN_DIR/niner-standalone"
 WRAPPER="$BIN_DIR/nih-standalone-wrapper"
+
+# UI scale: baseview applies this as the standalone's native scale factor via
+# --dpi-scale. The in-GUI scale badge writes the chosen value to ui_scale.txt;
+# it takes effect on the next launch. Validate to a positive number, else 1.0.
+SCALE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/niner/ui_scale.txt"
+SCALE="1.0"
+if [ -r "$SCALE_FILE" ]; then
+  _raw="$(tr -d '[:space:]' < "$SCALE_FILE" 2>/dev/null)"
+  if [[ "$_raw" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    SCALE="$_raw"
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # Default path: --backend alsa with auto-subscribed MIDI input.

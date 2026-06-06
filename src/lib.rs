@@ -5,6 +5,14 @@
 //! here; `main.rs` is a thin wrapper that calls `run_standalone`.
 
 use nih_plug::prelude::*;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// True when running as the standalone binary (set at the top of
+/// `run_standalone`), false in the VST3/CLAP plugin. UI scaling differs by
+/// host: the DAW path drives egui zoom + a window resize, while the standalone
+/// scales via baseview's `--dpi-scale` and skips the zoom/resize path (which
+/// would over-size a host-less window). See `ui::editor`.
+pub static IS_STANDALONE: AtomicBool = AtomicBool::new(false);
 
 mod export;
 mod logging;
@@ -59,6 +67,8 @@ nih_export_clap!(plugin::Niner);
 /// (48 kHz / 512) mismatch most WASAPI mix formats and the backend has no
 /// negotiation path. Linux and macOS use nih-plug's default parser unchanged.
 pub fn run_standalone() {
+    IS_STANDALONE.store(true, Ordering::Relaxed);
+
     // Initialize logging + panic hook before anything else so a panic in
     // backend probing, window creation, or the first paint still lands in
     // `niner.log`. The plugin path also calls `logging::init()` from

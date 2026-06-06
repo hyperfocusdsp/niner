@@ -2106,7 +2106,7 @@ dependencies = [
 
 [[package]]
 name = "niner"
-version = "0.7.9"
+version = "0.8.0"
 dependencies = [
  "cpal",
  "directories",

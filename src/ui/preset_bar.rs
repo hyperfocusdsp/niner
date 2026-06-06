@@ -211,17 +211,9 @@ impl PresetBar {
         let btn_h = display_h;
         let preset_y = header_center_y - display_h * 0.5;
 
-        // Divider line
-        {
-            let painter = ui.painter();
-            painter.line_segment(
-                [
-                    egui::pos2(origin_x - 8.0, preset_y),
-                    egui::pos2(origin_x - 8.0, preset_y + display_h),
-                ],
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(0x28, 0x28, 0x28)),
-            );
-        }
+        // (Removed a vestigial 1px vertical divider that sat just left of the
+        // preset bar — on the old chassis it was a subtle separator, but on the
+        // flat Fallout plate it read as a stray mark before the preset name.)
 
         let selected_name = self.state.selected_name.clone();
         let is_editing = self.state.editing;

@@ -18,11 +18,6 @@ use crate::ui::widgets::{
     draw_rack_ear, draw_screw, lit_rect_default, param_knob, param_knob_compact,
 };
 
-/// The bare faceplate art carries no baked-in section labels, so the live
-/// UI draws SUB/TOP/MID/SAT/EQ itself (grid-locked by construction). Set
-/// `false` only if a future chassis bakes its own section labels.
-pub const SHOW_SECTION_LABELS: bool = true;
-
 pub const KNOB_SIZE: f32 = 32.0;
 pub const KNOB_SPACING: f32 = 52.0;
 pub const RACK_EAR_W: f32 = 16.0;
@@ -189,23 +184,18 @@ pub fn draw_chrome(
         }
     }
 
-    // The bare faceplate art has no baked corner hardware, so the procedural
-    // hex screws are drawn. Set `false` for a screw-less chassis.
-    const SHOW_CORNER_SCREWS: bool = true;
     // Draw hex screws on top of chassis (always, regardless of bake state).
-    if SHOW_CORNER_SCREWS {
-        for i in 0..4 {
-            let (bx, by) = screw_bases[i];
-            let off = screw_offsets[i];
-            let scale = screw_scales[i];
-            crate::ui::widgets::draw_hex_screw(
-                painter,
-                bx + off.x,
-                by + off.y,
-                SCREW_R * scale,
-                SCREW_BASE_ANGLES[i],
-            );
-        }
+    for i in 0..4 {
+        let (bx, by) = screw_bases[i];
+        let off = screw_offsets[i];
+        let scale = screw_scales[i];
+        crate::ui::widgets::draw_hex_screw(
+            painter,
+            bx + off.x,
+            by + off.y,
+            SCREW_R * scale,
+            SCREW_BASE_ANGLES[i],
+        );
     }
 
     painter.text(
@@ -311,6 +301,12 @@ pub struct MasterRow<'a> {
     /// `None`, the procedural sheen drawn inside `draw_inset_display`
     /// remains the visible glass effect.
     pub display_reflection: Option<&'a egui::TextureHandle>,
+    /// Glossy display panel PNG (`assets/display_bg.png`) — rounded-corner
+    /// black screen with a baked sheen. When present it replaces the
+    /// red-tinted LCD fill + inset frame as the display background (red
+    /// readouts draw on top; the separate glass reflection is skipped, as
+    /// the panel carries its own sheen).
+    pub display_bg: Option<&'a egui::TextureHandle>,
 }
 
 impl<'a> MasterRow<'a> {
@@ -389,25 +385,34 @@ impl<'a> MasterRow<'a> {
         let painter = ui.painter();
         // Display background ends at the DECAY knob right edge (display_paint_w).
         // DECAY/DRIFT/VOL and AMT/RCT/DRV sit on the chassis, not the display.
-        painter.rect_filled(
-            egui::Rect::from_min_size(
-                egui::pos2(wf_left, master_y),
-                egui::vec2(display_paint_w, wf_height),
-            ),
-            3.0,
-            theme::BG_DISPLAY,
+        let display_outer = egui::Rect::from_min_size(
+            egui::pos2(wf_left, master_y),
+            egui::vec2(display_paint_w, wf_height),
         );
-        // Inset display under-content (frame + lit BG + scan-lines + red
-        // ambient glow). Glass reflection is painted later, after bars/
-        // waveform, so it sits on top of the lit content like real glass.
-        draw_inset_display_no_glass(
-            painter,
-            wf_left,
-            master_y,
-            display_paint_w,
-            wf_height,
-            crate::ui::widgets::DisplayInsets::DEFAULT,
-        );
+        if let Some(bg) = self.display_bg {
+            // Glossy panel replaces the red-LCD fill + inset frame; its
+            // rounded corners + baked sheen form the screen edge. The red
+            // readouts below draw on top.
+            painter.image(
+                bg.id(),
+                display_outer,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        } else {
+            painter.rect_filled(display_outer, 3.0, theme::BG_DISPLAY);
+            // Inset display under-content (frame + lit BG + scan-lines + red
+            // ambient glow). Glass reflection is painted later, after bars/
+            // waveform, so it sits on top of the lit content like real glass.
+            draw_inset_display_no_glass(
+                painter,
+                wf_left,
+                master_y,
+                display_paint_w,
+                wf_height,
+                crate::ui::widgets::DisplayInsets::DEFAULT,
+            );
+        }
         let mode_label = match self.display_mode {
             DisplayMode::Waveform => "OUTPUT",
             DisplayMode::Spectrum => "SPECTRUM",
@@ -492,13 +497,17 @@ impl<'a> MasterRow<'a> {
         // waveform so the highlights sit on top of lit content like real
         // glass; painted BEFORE the GR overlay + mode label so those stay
         // crisp and readable above the reflection.
-        if let Some(handle) = self.display_reflection {
-            painter.image(
-                handle.id(),
-                lit,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
+        // Skip the separate glass overlay when the glossy panel bg is in use
+        // (the panel carries its own sheen — stacking both double-glares).
+        if self.display_bg.is_none() {
+            if let Some(handle) = self.display_reflection {
+                painter.image(
+                    handle.id(),
+                    lit,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            }
         }
 
         // ── Gain-reduction overlay bar ──
@@ -1109,22 +1118,20 @@ pub fn draw_sub_top_row(
         egui::Align2::LEFT_TOP,
     );
     let painter = ui.painter();
-    if SHOW_SECTION_LABELS {
-        painter.text(
-            sub_pos,
-            egui::Align2::LEFT_TOP,
-            "SUB",
-            row_label_font.clone(),
-            theme::WHITE,
-        );
-        painter.text(
-            top_pos,
-            egui::Align2::LEFT_TOP,
-            "TOP",
-            row_label_font,
-            theme::WHITE,
-        );
-    }
+    painter.text(
+        sub_pos,
+        egui::Align2::LEFT_TOP,
+        "SUB",
+        row_label_font.clone(),
+        theme::WHITE,
+    );
+    painter.text(
+        top_pos,
+        egui::Align2::LEFT_TOP,
+        "TOP",
+        row_label_font,
+        theme::WHITE,
+    );
 
     row_knob_y + KNOB_SIZE + 34.0
 }
@@ -1419,15 +1426,13 @@ pub fn draw_mid_row(
         egui::vec2(40.0, 14.0),
         egui::Align2::LEFT_TOP,
     );
-    if SHOW_SECTION_LABELS {
-        ui.painter().text(
-            mid_pos,
-            egui::Align2::LEFT_TOP,
-            "MID",
-            crate::ui::layout_overrides::label_font(ui.ctx(), 11.0),
-            theme::WHITE,
-        );
-    }
+    ui.painter().text(
+        mid_pos,
+        egui::Align2::LEFT_TOP,
+        "MID",
+        crate::ui::layout_overrides::label_font(ui.ctx(), 11.0),
+        theme::WHITE,
+    );
 
     row_knob_y + KNOB_SIZE + 34.0
 }
@@ -1488,22 +1493,20 @@ pub fn draw_sat_eq_row(
         // second sub-row of the SAT cluster but above the sat_eq_return
         // boundary — i.e., still inside the SAT section. EQ stays at the
         // top-left of its sub-section.
-        if SHOW_SECTION_LABELS {
-            painter.text(
-                sat_label_pos,
-                egui::Align2::LEFT_TOP,
-                "SAT",
-                row_label_font.clone(),
-                theme::WHITE,
-            );
-            painter.text(
-                eq_label_pos,
-                egui::Align2::LEFT_TOP,
-                "EQ",
-                row_label_font,
-                theme::WHITE,
-            );
-        }
+        painter.text(
+            sat_label_pos,
+            egui::Align2::LEFT_TOP,
+            "SAT",
+            row_label_font.clone(),
+            theme::WHITE,
+        );
+        painter.text(
+            eq_label_pos,
+            egui::Align2::LEFT_TOP,
+            "EQ",
+            row_label_font,
+            theme::WHITE,
+        );
         draw_groove(
             painter,
             panel_rect.left() + CONTENT_LEFT - 4.0,

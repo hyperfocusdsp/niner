@@ -12,6 +12,34 @@ use crate::midi_map::{CcEncoding, MidiMapState, MidiSource, NoteBlockMap, OMNI};
 use crate::ui::knob;
 use crate::ui::theme;
 
+/// Draw `text` with a 1px dark outline so labels stay legible over the busy
+/// distressed Fallout plate (light paint-chips vs dark metal would otherwise
+/// swallow a flat-colored label). Paints the outline in 8 directions, then the
+/// foreground on top. Returns the foreground text rect.
+pub fn outlined_text(
+    painter: &egui::Painter,
+    pos: egui::Pos2,
+    anchor: egui::Align2,
+    text: &str,
+    font: egui::FontId,
+    color: egui::Color32,
+) -> egui::Rect {
+    let outline = egui::Color32::from_black_alpha(210);
+    for (dx, dy) in [
+        (-1.0, -1.0),
+        (0.0, -1.0),
+        (1.0, -1.0),
+        (-1.0, 0.0),
+        (1.0, 0.0),
+        (-1.0, 1.0),
+        (0.0, 1.0),
+        (1.0, 1.0),
+    ] {
+        painter.text(pos + egui::vec2(dx, dy), anchor, text, font.clone(), outline);
+    }
+    painter.text(pos, anchor, text, font, color)
+}
+
 /// Shared state stashed in `egui::Context::data` so `param_knob` (and any
 /// other widget that wants MIDI Learn) can attach the right-click menu
 /// without threading 3 extra args through every call site.
@@ -325,6 +353,32 @@ pub static KNOB_CAP_BAKED: std::sync::atomic::AtomicBool =
 /// `None` until the editor decoded the PNG and stashed it.
 pub fn knob_cap_handle(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     ctx.data(|d| d.get_temp::<egui::TextureHandle>(egui::Id::new("niner_knob_cap_handle")))
+}
+
+/// Pull the per-section glossy knob cap for `core_color` out of ctx.data, if
+/// one was baked for that section. These photoreal caps have the color and
+/// white speculars baked in, so the caller blits them UNTINTED; sections
+/// without a match fall back to the tinted neutral `knob_cap`.
+pub fn section_cap_handle(
+    ctx: &egui::Context,
+    core_color: egui::Color32,
+) -> Option<egui::TextureHandle> {
+    let id = if core_color == theme::SECTION_SUB {
+        "niner_knob_sub"
+    } else if core_color == theme::SECTION_TOP {
+        "niner_knob_top"
+    } else if core_color == theme::SECTION_MID {
+        "niner_knob_mid"
+    } else if core_color == theme::SECTION_SAT {
+        "niner_knob_sat"
+    } else if core_color == theme::SECTION_EQ {
+        "niner_knob_eq"
+    } else if core_color == theme::SECTION_MASTER {
+        "niner_knob_master"
+    } else {
+        return None;
+    };
+    ctx.data(|d| d.get_temp::<egui::TextureHandle>(egui::Id::new(id)))
 }
 
 /// Set to `true` once the display reflection PNG has been uploaded as a

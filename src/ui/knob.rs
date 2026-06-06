@@ -1,20 +1,6 @@
 use crate::ui::theme;
 use nih_plug_egui::egui;
 
-/// One-time read of `NINER_ALIGN_TEMPLATE`. When set to `1`/`true`, knobs
-/// render as magenta alignment rings instead of normal caps — a dev aid for
-/// authoring background faceplate art that matches the fixed knob grid.
-fn align_template_enabled() -> bool {
-    use std::sync::OnceLock;
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        matches!(
-            std::env::var("NINER_ALIGN_TEMPLATE").as_deref(),
-            Ok("1") | Ok("true")
-        )
-    })
-}
-
 pub struct KnobResponse {
     pub changed: bool,
     pub reset: bool,
@@ -241,25 +227,27 @@ fn knob_inner(
             //       killing the pixelation/aliasing that showed when the
             //       bake's alpha falloff competed with the bevel circle.
             let visible_core_r = (core_radius - 1.0).max(core_radius * 0.85);
-            let cap_handle =
-                if crate::ui::widgets::KNOB_CAP_BAKED.load(std::sync::atomic::Ordering::Relaxed) {
-                    crate::ui::widgets::knob_cap_handle(ui.ctx())
-                } else {
-                    None
-                };
-            if let Some(handle) = cap_handle {
-                // The bake's visible disk is `cap.radius_px=110` in a
-                // 256-wide canvas → fills 110/128 = 0.859 of the half.
-                // Scale dest rect so the disk maps to visible_core_r.
-                let cap_scale = 128.0 / 110.0;
-                let cap_w = visible_core_r * 2.0 * cap_scale;
-                let cap_rect = egui::Rect::from_center_size(center, egui::vec2(cap_w, cap_w));
-                painter.image(
-                    handle.id(),
-                    cap_rect,
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    core_color,
-                );
+            // Per-section glossy bake (color + white speculars baked in) wins
+            // and is blitted UNTINTED; otherwise the neutral cap multiplied by
+            // `core_color`; otherwise a flat fill.
+            let section_handle = crate::ui::widgets::section_cap_handle(ui.ctx(), core_color);
+            let neutral_handle = if section_handle.is_none()
+                && crate::ui::widgets::KNOB_CAP_BAKED.load(std::sync::atomic::Ordering::Relaxed)
+            {
+                crate::ui::widgets::knob_cap_handle(ui.ctx())
+            } else {
+                None
+            };
+            // The bake's visible disk fills 110/128 = 0.859 of the half;
+            // scale the dest rect so the disk maps to visible_core_r.
+            let cap_scale = 128.0 / 110.0;
+            let cap_w = visible_core_r * 2.0 * cap_scale;
+            let cap_rect = egui::Rect::from_center_size(center, egui::vec2(cap_w, cap_w));
+            let cap_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+            if let Some(handle) = section_handle {
+                painter.image(handle.id(), cap_rect, cap_uv, egui::Color32::WHITE);
+            } else if let Some(handle) = neutral_handle {
+                painter.image(handle.id(), cap_rect, cap_uv, core_color);
             } else {
                 painter.circle_filled(center, visible_core_r, core_color);
             }
@@ -376,51 +364,27 @@ fn knob_inner(
                     );
                 });
             }
-
-            // Alignment-template overlay: when `NINER_ALIGN_TEMPLATE=1`, draw
-            // a bright magenta ring + crosshair at each knob's *actual* center
-            // and radius, on top of everything. Screenshot it to get a
-            // pixel-exact spec of where every knob lands, so background
-            // faceplate art can be authored to match the fixed code grid.
-            // Off in normal runs (one-time env read).
-            if align_template_enabled() {
-                let m = egui::Color32::from_rgb(0xff, 0x00, 0xff);
-                painter.circle_stroke(center, radius, egui::Stroke::new(1.5, m));
-                painter.circle_filled(center, 1.5, m);
-                painter.line_segment(
-                    [
-                        center - egui::vec2(radius + 3.0, 0.0),
-                        center + egui::vec2(radius + 3.0, 0.0),
-                    ],
-                    egui::Stroke::new(0.75, m),
-                );
-                painter.line_segment(
-                    [
-                        center - egui::vec2(0.0, radius + 3.0),
-                        center + egui::vec2(0.0, radius + 3.0),
-                    ],
-                    egui::Stroke::new(0.75, m),
-                );
-            }
         }
 
-        // Label below. The bare faceplate art carries no baked-in knob
-        // labels, so the code draws them (grid-locked by construction). Set
-        // `false` only if a future chassis bakes its own knob labels.
-        const SHOW_KNOB_LABELS: bool = true;
+        // Label below — allocate the space with an invisible galley so the
+        // knob-row geometry is unchanged, then paint it with a dark outline
+        // (legible over the distressed plate's light paint-chips).
         ui.add_space(label_gap);
         ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-            if SHOW_KNOB_LABELS {
-                ui.label(
-                    egui::RichText::new(label)
-                        .font(egui::FontId::new(9.5, egui::FontFamily::Monospace))
-                        .color(theme::WHITE),
-                );
-            } else {
-                // Reserve the same vertical extent the label would occupy
-                // so the knob box height (and thus row layout) is identical.
-                ui.add_space(9.5);
-            }
+            let font = egui::FontId::new(9.5, egui::FontFamily::Monospace);
+            let resp = ui.label(
+                egui::RichText::new(label)
+                    .font(font.clone())
+                    .color(egui::Color32::TRANSPARENT),
+            );
+            crate::ui::widgets::outlined_text(
+                ui.painter(),
+                resp.rect.center_top(),
+                egui::Align2::CENTER_TOP,
+                label,
+                font,
+                theme::WHITE,
+            );
         });
     });
 

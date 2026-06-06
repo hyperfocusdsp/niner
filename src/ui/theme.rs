@@ -25,7 +25,11 @@ pub const RED_WAVEFORM: egui::Color32 =
 // Used everywhere we'd previously use plain "white" for foreground content,
 // so all UI text/highlights pick up the same cream as the wordmark.
 pub const WHITE: egui::Color32 = egui::Color32::from_rgb(0xf4, 0xf1, 0xea);
-pub const TEXT_DIM: egui::Color32 = egui::Color32::from_rgb(0x55, 0x55, 0x55);
+// Secondary/quiet labels (KICK SYNTHESIZER, version, COMP/PRECISE/CLAP,
+// PRE/POST, feedback). Raised from 0x55 — that read on the old flat 0x13
+// chassis but vanished on the busy distressed Fallout plate. Bone-tinted
+// light grey: legible over the dark plate, still clearly below WHITE.
+pub const TEXT_DIM: egui::Color32 = egui::Color32::from_rgb(0xa8, 0xa3, 0x98);
 pub const TEXT_GHOST: egui::Color32 =
     egui::Color32::from_rgba_premultiplied(0x12, 0x12, 0x12, 0x12);
 

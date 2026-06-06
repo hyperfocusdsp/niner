@@ -38,6 +38,15 @@ use crate::dsp::spectrum::{BINS as SPECTRUM_BINS, DB_CEIL, DB_FLOOR};
 static KEY_EVENT_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
 const KEY_EVENT_LOG_MAX: usize = 32;
 
+/// Draw the live header lockup (the amber "9" badge + NINER wordmark).
+/// The Fallout chassis (`assets/chassis.png`) is a logo-less plate — the
+/// genai-baked NINER was painted out because it sat below the header line
+/// and couldn't be re-cropped onto it — so the live logo carries the
+/// wordmark, correctly aligned. (Knob/section labels are likewise live;
+/// the genai-baked labels were wrong, e.g. ANT/BW.) Set false only if a
+/// future plate bakes the wordmark in at the right spot.
+const SHOW_HEADER_LOGO: bool = true;
+
 /// Rolling ring of recent audio peaks for the OUTPUT waveform display.
 ///
 /// Fixed-capacity ring buffer with an explicit head cursor. `push` is O(1)
@@ -169,6 +178,7 @@ pub fn create(
     // drain the outcome once the thread finishes.
     let bounce_inflight: Arc<Mutex<Option<mpsc::Receiver<ExportOutcome>>>> =
         Arc::new(Mutex::new(None));
+    let editor_state_clone = Arc::clone(&editor_state);
     // Visually smoothed GR meter value — instant attack, slow release, held
     // across frames so the bar doesn't flicker between audio buffers.
     let gr_display = Arc::new(Mutex::new(0.0f32));
@@ -209,6 +219,10 @@ pub fn create(
     // chassis bake; replaces the procedural top sheen + 1-px specular line
     // on the OUTPUT display once `DISPLAY_BAKED` flips true.
     let display_reflection_texture: Arc<Mutex<Option<egui::TextureHandle>>> =
+        Arc::new(Mutex::new(None));
+    // Glossy display panel (`assets/display_bg.png`) — drawn as the OUTPUT
+    // display background (replaces the red-LCD fill) when present.
+    let display_bg_texture: Arc<Mutex<Option<egui::TextureHandle>>> =
         Arc::new(Mutex::new(None));
     // Identity of the egui::Context the cached TextureHandles above were
     // uploaded against. Bitwig destroys the plugin window's GL context on
@@ -281,17 +295,35 @@ pub fn create(
             crate::ui::layout_overrides::init(ctx);
         },
         move |ctx, setter, _state| {
-            // UI scale (1.0 / 1.5 / 2.0) is driven by baseview's *native* scale
-            // factor — NOT egui's zoom. This egui-baseview tessellates at its
-            // own `pixels_per_point` (the baseview scale policy) and ignores
-            // `ctx.set_zoom_factor()`, so driving zoom only desyncs layout vs.
-            // tessellation (the "pixels_per_point changed" warning) and leaves
-            // content at 1×. Instead the standalone launcher forwards the saved
-            // factor as `--dpi-scale $SCALE`; the window opens at the logical
-            // BASE size (see params.rs) and baseview renders it at BASE × scale.
-            // The in-GUI badge persists the factor and applies on the next open.
-            // (Live in-DAW rescale would need an egui-baseview patch to render
-            // at the zoom-aware ppp — tracked as a follow-up.)
+            // UI scale (1.0 / 1.5 / 2.0) — DAW-only path.
+            //
+            // In a DAW we drive egui's content zoom + a matching programmatic
+            // window resize from a single value: the host owns the outer
+            // window and honours `request_resize()` / `editor.size()`, so it
+            // grows to BASE × scale physical px while the layout keeps drawing
+            // into a fixed BASE logical space (uniform scale, no reflow).
+            //
+            // The standalone is SKIPPED here: it scales via baseview's
+            // `--dpi-scale <scale>` (niner-launch reads ui_scale.txt) instead.
+            // Running this block there would compound with baseview's scale
+            // and, worse, the fork's resize fires a logical-points `InnerSize`
+            // command with no host to override it, over-sizing the window.
+            // A standalone scale change is applied on the next relaunch.
+            //
+            // `set_zoom_factor` is cheap and idempotent per frame; the resize
+            // request only fires when the stored size actually differs.
+            if !crate::IS_STANDALONE.load(std::sync::atomic::Ordering::Relaxed) {
+                let scale = (*params.ui_scale.lock()).clamp(1.0, 2.0);
+                ctx.set_zoom_factor(scale);
+                let (bw, bh) = crate::params::BASE_WINDOW_SIZE;
+                let want = (
+                    (bw as f32 * scale).round() as u32,
+                    (bh as f32 * scale).round() as u32,
+                );
+                if editor_state_clone.size() != want {
+                    editor_state_clone.set_requested_size(want);
+                }
+            }
 
             // Invalidate texture caches when the egui::Context changes. The
             // `Arc<Mutex<Option<TextureHandle>>>`s captured above outlive any
@@ -310,6 +342,7 @@ pub fn create(
                     *screws_texture.lock() = None;
                     *knob_cap_texture.lock() = None;
                     *display_reflection_texture.lock() = None;
+                    *display_bg_texture.lock() = None;
                     use std::sync::atomic::Ordering;
                     crate::ui::widgets::CHASSIS_BAKED.store(false, Ordering::Relaxed);
                     crate::ui::widgets::SCREWS_BAKED.store(false, Ordering::Relaxed);
@@ -666,6 +699,48 @@ pub fn create(
                         }
                     }
 
+                    // Per-section glossy knob caps (assets/knob_<section>.png),
+                    // sliced from the photoreal sheet. Loaded once per egui
+                    // context (ctx.data is fresh on a Bitwig reopen → reloads)
+                    // and stashed by id; `section_cap_handle` fetches them and
+                    // knob.rs blits them UNTINTED for true per-color speculars.
+                    {
+                        let have_caps = ctx.data(|d| {
+                            d.get_temp::<egui::TextureHandle>(egui::Id::new("niner_knob_sub"))
+                                .is_some()
+                        });
+                        if !have_caps {
+                            let section_assets: [(&str, &[u8]); 6] = [
+                                ("niner_knob_sub", include_bytes!("../../assets/knob_sub.png")),
+                                ("niner_knob_top", include_bytes!("../../assets/knob_top.png")),
+                                ("niner_knob_mid", include_bytes!("../../assets/knob_mid.png")),
+                                ("niner_knob_sat", include_bytes!("../../assets/knob_sat.png")),
+                                ("niner_knob_eq", include_bytes!("../../assets/knob_eq.png")),
+                                (
+                                    "niner_knob_master",
+                                    include_bytes!("../../assets/knob_master.png"),
+                                ),
+                            ];
+                            for (id, bytes) in section_assets {
+                                if let Ok(img) = image::load_from_memory(bytes) {
+                                    let rgba = img.to_rgba8();
+                                    let (w, h) = rgba.dimensions();
+                                    let pixels = rgba.into_raw();
+                                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                        [w as usize, h as usize],
+                                        &pixels,
+                                    );
+                                    let handle = ctx.load_texture(
+                                        id,
+                                        color_image,
+                                        egui::TextureOptions::LINEAR,
+                                    );
+                                    ctx.data_mut(|d| d.insert_temp(egui::Id::new(id), handle));
+                                }
+                            }
+                        }
+                    }
+
                     // Display reflection (lazy upload — replaces the
                     // procedural sheen/specular on the OUTPUT display).
                     {
@@ -702,6 +777,30 @@ pub fn create(
                         }
                     }
 
+                    // Display background panel (lazy upload) — glossy screen
+                    // art (assets/display_bg.png) drawn behind the OUTPUT
+                    // readouts, replacing the red-LCD fill.
+                    {
+                        let mut tex = display_bg_texture.lock();
+                        if tex.is_none() {
+                            let bytes = include_bytes!("../../assets/display_bg.png");
+                            if let Ok(img) = image::load_from_memory(bytes) {
+                                let rgba = img.to_rgba8();
+                                let (w, h) = rgba.dimensions();
+                                let pixels = rgba.into_raw();
+                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                    [w as usize, h as usize],
+                                    &pixels,
+                                );
+                                *tex = Some(ctx.load_texture(
+                                    "niner_display_bg",
+                                    color_image,
+                                    egui::TextureOptions::LINEAR,
+                                ));
+                            }
+                        }
+                    }
+
                     // ===== Panel chrome =====
                     let header_center_y = panels::draw_chrome(
                         ui,
@@ -718,20 +817,14 @@ pub fn create(
                     // `assets/niner_9.png` and `assets/niner_logo.png` —
                     // re-run `rsvg-convert | magick -trim` and update these
                     // ratios when the wordmark/badge SVGs change.
+                    if SHOW_HEADER_LOGO {
                     let lockup_h = 20.0;
                     let nine_w = lockup_h * (64.0 / 80.0); // ~16.0 px
                     let wordmark_w = lockup_h * (342.0 / 80.0); // ~85.5 px
                     let lockup_gap = 5.0;
 
-                    // The faceplate art already carries a baked-in NINER
-                    // wordmark + "9" badge, so the live header lockup is
-                    // suppressed to avoid a doubled / misaligned logo. Flip
-                    // to `true` to restore the procedural lockup for a
-                    // logo-less chassis.
-                    const SHOW_HEADER_LOGO: bool = false;
-
                     // "9" badge — sits at CONTENT_LEFT, left of the wordmark.
-                    if SHOW_HEADER_LOGO {
+                    {
                         let mut tex = nine_badge_texture.lock();
                         if tex.is_none() {
                             let bytes = include_bytes!("../../assets/niner_9.png");
@@ -788,7 +881,7 @@ pub fn create(
                     }
 
                     // NINER wordmark — sits to the right of the "9" badge.
-                    if SHOW_HEADER_LOGO {
+                    {
                         let mut tex = logo_texture.lock();
                         if tex.is_none() {
                             let bytes = include_bytes!("../../assets/niner_logo.png");
@@ -833,6 +926,7 @@ pub fn create(
                             );
                         }
                     }
+                    } // end if SHOW_HEADER_LOGO (chassis bakes the wordmark)
 
                     // UI scale badge — discreet click-to-cycle, lives in the
                     // header to the left of "KICK SYNTHESIZER" so the footer
@@ -1004,6 +1098,7 @@ pub fn create(
                         let sd = spectrum_display.lock();
                         let mode = panels::display_mode(ctx);
                         let display_reflection_lock = display_reflection_texture.lock();
+                        let display_bg_lock = display_bg_texture.lock();
                         let (wf_older, wf_newer) = wf.slices();
                         let master_row = panels::MasterRow {
                             master_y,
@@ -1017,6 +1112,7 @@ pub fn create(
                             display_mode: mode,
                             gr_db: gr_smoothed,
                             display_reflection: display_reflection_lock.as_ref(),
+                            display_bg: display_bg_lock.as_ref(),
                         };
                         master_row.draw(ui, setter, &params, panel_rect);
                     }
@@ -1067,12 +1163,17 @@ pub fn create(
                                 egui::pos2(ui_pos.x - 48.0, ui_pos.y),
                                 egui::vec2(50.0, 12.0),
                             );
+                            let tip = if crate::IS_STANDALONE
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                            {
+                                "UI scale — click to cycle (1x / 1.5x / 2x). Relaunch to apply."
+                            } else {
+                                "UI scale — click to cycle (1x / 1.5x / 2x)."
+                            };
                             let ui_resp = ui
                                 .interact(hit, egui::Id::new("ui_scale_btn"), egui::Sense::click())
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .on_hover_text(
-                                    "UI scale — click to cycle (1x / 1.5x / 2x). Reopen the plugin to apply.",
-                                );
+                                .on_hover_text(tip);
                             let color = if ui_resp.hovered() {
                                 theme::WHITE
                             } else {
@@ -1094,7 +1195,12 @@ pub fn create(
                                 };
                                 *lock = next;
                                 crate::util::paths::save_ui_scale(next);
-                                tracing::info!("[ui_scale] saved → {next}x (applies on plugin reopen)");
+                                let live = !crate::IS_STANDALONE
+                                    .load(std::sync::atomic::Ordering::Relaxed);
+                                tracing::info!(
+                                    "[ui_scale] cycled → {next}x ({})",
+                                    if live { "applied live" } else { "relaunch to apply" }
+                                );
                             }
                         }
                     }
