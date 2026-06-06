@@ -45,6 +45,16 @@ pub const KNOB_INDICATOR: egui::Color32 = egui::Color32::from_rgb(0xf4, 0xf1, 0x
 pub const KNOB_DIMPLE: egui::Color32 =
     egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0x26);
 
+// Skeuomorphic matte-rubber knob (v0.8.x procedural look). Knurled rubber
+// rim = two alternating tooth tones; round body fills the inter-tooth gaps;
+// drop shadow seats the knob on the plate. The cap is the section colour
+// (drawn as a radial gradient in knob.rs); the pointer is pure white.
+pub const KNURL_DARK: egui::Color32 = egui::Color32::from_rgb(0x13, 0x13, 0x13);
+pub const KNURL_LIGHT: egui::Color32 = egui::Color32::from_rgb(0x2d, 0x2d, 0x2d);
+pub const KNOB_BODY: egui::Color32 = egui::Color32::from_rgb(0x1c, 0x1c, 0x1c);
+pub const KNOB_DROP: egui::Color32 =
+    egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0x80);
+
 // Section knob cores (Vintage MPC palette)
 pub const SECTION_TOP: egui::Color32 = egui::Color32::from_rgb(0xd4, 0x95, 0x26); // amber
 pub const SECTION_SUB: egui::Color32 = egui::Color32::from_rgb(0x85, 0x90, 0xa0); // blue-grey steel

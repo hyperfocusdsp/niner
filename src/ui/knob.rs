@@ -1,6 +1,16 @@
 use crate::ui::theme;
 use nih_plug_egui::egui;
 
+/// Multiply an opaque colour toward black by factor `t` (0 = black, 1 = same).
+/// Used to derive the cap's dark rim shade from its saturated section colour.
+fn darken(c: egui::Color32, t: f32) -> egui::Color32 {
+    egui::Color32::from_rgb(
+        (c.r() as f32 * t) as u8,
+        (c.g() as f32 * t) as u8,
+        (c.b() as f32 * t) as u8,
+    )
+}
+
 pub struct KnobResponse {
     pub changed: bool,
     pub reset: bool,
@@ -12,7 +22,9 @@ pub struct KnobResponse {
     pub response: Option<egui::Response>,
 }
 
-/// G3 industrial knob: rubber grip ring + beveled metal core + tapered indicator.
+/// Skeuomorphic matte-rubber knob: knurled rubber rim + saturated soft-sheen
+/// section-colour cap + crisp white pointer (black-outlined) reaching the rim.
+/// The rim and cap are rotationally symmetric, so only the pointer rotates.
 ///
 /// Vertical drag changes value, shift for fine control, ctrl+click to reset.
 #[allow(clippy::too_many_arguments)]
@@ -190,162 +202,133 @@ fn knob_inner(
             let radius = diameter / 2.0;
             let norm = ((*value - min) / (max - min)).clamp(0.0, 1.0);
 
-            // 1. Mounting recess shadow
-            painter.circle_filled(
-                center + egui::vec2(0.5, 1.5),
-                radius + 3.0,
-                theme::KNOB_RECESS,
-            );
-            painter.circle_filled(center, radius + 2.0, theme::KNOB_RECESS);
+            // Cap occupies the inner 66% of the knob; the knurled rubber
+            // rim is the annulus from there out to the edge.
+            let cap_r = radius * 0.66;
 
-            // 2. Rubber grip ring (outer layer)
-            painter.circle_filled(center, radius, theme::KNOB_RUBBER);
-            painter.circle_filled(
-                center - egui::vec2(0.0, radius * 0.1),
-                radius * 0.95,
-                theme::KNOB_RUBBER_HIGHLIGHT,
-            );
-            painter.circle_filled(center, radius * 0.88, theme::KNOB_RUBBER);
+            // 1. Drop shadow — seats the knob on the plate.
+            painter.circle_filled(center + egui::vec2(0.0, 1.5), radius + 1.0, theme::KNOB_DROP);
 
-            // 3. Bevel ring
-            let core_radius = radius * 0.6;
-            painter.circle_filled(center, core_radius + 1.5, theme::KNOB_BEVEL);
+            // 2. Round body silhouette (fills the inter-tooth gaps so the
+            //    outer edge reads as a clean circle, not a 40-gon).
+            painter.circle_filled(center, radius, theme::KNOB_BODY);
 
-            // 4. Flat plastic core. When the Cycles-baked `knob_cap.png`
-            // texture is loaded, blit it tinted by `core_color` —
-            // egui's painter.image multiplies the texture by the tint so
-            // a single neutral-white-plastic bake renders as any section
-            // colour with photoreal studio lighting. Falls through to a
-            // solid base when the bake didn't load.
-            //
-            // The cap is blitted at `core_radius - 1.0` (slightly inside
-            // the bevel ring) so the grey ring covers the bake's
-            // anti-aliased boundary. Two wins from the inset:
-            //   (a) the core reads as *recessed under* the bevel (the
-            //       grey ring sits proud of the colored disk), and
-            //   (b) the AA edge of the bake is hidden by the solid bevel,
-            //       killing the pixelation/aliasing that showed when the
-            //       bake's alpha falloff competed with the bevel circle.
-            let visible_core_r = (core_radius - 1.0).max(core_radius * 0.85);
-            // Per-section glossy bake (color + white speculars baked in) wins
-            // and is blitted UNTINTED; otherwise the neutral cap multiplied by
-            // `core_color`; otherwise a flat fill.
-            let section_handle = crate::ui::widgets::section_cap_handle(ui.ctx(), core_color);
-            let neutral_handle = if section_handle.is_none()
-                && crate::ui::widgets::KNOB_CAP_BAKED.load(std::sync::atomic::Ordering::Relaxed)
+            // 3. Knurled rubber rim: 20 even teeth (40 alternating wedges).
+            //    40 segments = 9° each → seamless at the 0/360 wrap, so
+            //    there's no doubled-width dark tooth at 12 o'clock. Built as
+            //    one mesh of colour-per-vertex quads (cheap, single draw).
             {
-                crate::ui::widgets::knob_cap_handle(ui.ctx())
-            } else {
-                None
-            };
-            // The bake's visible disk fills 110/128 = 0.859 of the half;
-            // scale the dest rect so the disk maps to visible_core_r.
-            let cap_scale = 128.0 / 110.0;
-            let cap_w = visible_core_r * 2.0 * cap_scale;
-            let cap_rect = egui::Rect::from_center_size(center, egui::vec2(cap_w, cap_w));
-            let cap_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-            if let Some(handle) = section_handle {
-                painter.image(handle.id(), cap_rect, cap_uv, egui::Color32::WHITE);
-            } else if let Some(handle) = neutral_handle {
-                painter.image(handle.id(), cap_rect, cap_uv, core_color);
-            } else {
-                painter.circle_filled(center, visible_core_r, core_color);
+                let segs = 40usize;
+                let r_in = cap_r * 0.92;
+                let mut mesh = egui::Mesh::default();
+                for i in 0..segs {
+                    let a0 = std::f32::consts::TAU * (i as f32 / segs as f32);
+                    let a1 = std::f32::consts::TAU * ((i + 1) as f32 / segs as f32);
+                    let col = if i % 2 == 0 {
+                        theme::KNURL_DARK
+                    } else {
+                        theme::KNURL_LIGHT
+                    };
+                    let b = mesh.vertices.len() as u32;
+                    mesh.colored_vertex(center + egui::vec2(a0.cos(), a0.sin()) * r_in, col);
+                    mesh.colored_vertex(center + egui::vec2(a0.cos(), a0.sin()) * radius, col);
+                    mesh.colored_vertex(center + egui::vec2(a1.cos(), a1.sin()) * radius, col);
+                    mesh.colored_vertex(center + egui::vec2(a1.cos(), a1.sin()) * r_in, col);
+                    mesh.add_triangle(b, b + 1, b + 2);
+                    mesh.add_triangle(b, b + 2, b + 3);
+                }
+                painter.add(egui::Shape::mesh(mesh));
             }
-            // Subtle inner shadow at the core's outer edge — sells the
-            // "recessed under the rim" depth without darkening the cap
-            // surface itself. Stroke width 1.0 centered at visible
-            // core_r darkens just the outer 0.5 px of the cap.
+
+            // 4. Crisp dark outer rim line.
             painter.circle_stroke(
                 center,
-                visible_core_r,
-                egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(0, 0, 0, 0x40)),
+                radius,
+                egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(0, 0, 0, 0xb0)),
             );
 
-            // 6. Indicator stem + tick dots. The stem reads as a small
-            // piece of inlaid white plastic sitting in the rubber rim,
-            // cut to fit perfectly between the colored core and the
-            // outer edge of the rubber sleeve.
-            //
-            //   Inner short side: concave arc on the visible core's
-            //     outer circumference (radius=`visible_core_r`).
-            //   Outer short side: arc on the rubber sleeve's outer
-            //     circumference (radius=`radius`) — flush with the rim,
-            //     not reaching out into the tick-dot zone.
-            //
-            // Tick dots stay where they are (`radius + 2.5`); the stem
-            // and the dots are independent paint elements separated by
-            // a small gap of chassis background, just like a real knob
-            // where the pointer is on the rubber sleeve and the tick
-            // marks are painted on the panel beside it.
+            // 5. Cap — saturated radial gradient. Triangle fan: apex (the
+            //    highlight point, nudged up) is the pure section colour;
+            //    the rim ring is a darkened shade. The GPU interpolates a
+            //    smooth gradient between them, so the colour stays punchy
+            //    in the middle and falls off to a moulded edge.
+            let cap_outer = darken(core_color, 0.5);
+            {
+                let n = 48usize;
+                let apex = center - egui::vec2(0.0, cap_r * 0.25);
+                let mut mesh = egui::Mesh::default();
+                mesh.colored_vertex(apex, core_color);
+                for i in 0..=n {
+                    let a = std::f32::consts::TAU * (i as f32 / n as f32);
+                    mesh.colored_vertex(center + egui::vec2(a.cos(), a.sin()) * cap_r, cap_outer);
+                }
+                for i in 0..n as u32 {
+                    mesh.add_triangle(0, 1 + i, 2 + i);
+                }
+                painter.add(egui::Shape::mesh(mesh));
+            }
+
+            // 6. Soft glossy sheen near the top of the cap — premultiplied
+            //    white fading to transparent. Gives the rubber life without
+            //    a wet/glossy plastic look.
+            {
+                let n = 32usize;
+                let sheen_r = cap_r * 0.72;
+                let sheen_c = center - egui::vec2(0.0, cap_r * 0.34);
+                let sheen = egui::Color32::from_rgba_premultiplied(0x60, 0x60, 0x60, 0x60);
+                let mut mesh = egui::Mesh::default();
+                mesh.colored_vertex(sheen_c, sheen);
+                for i in 0..=n {
+                    let a = std::f32::consts::TAU * (i as f32 / n as f32);
+                    mesh.colored_vertex(
+                        sheen_c + egui::vec2(a.cos(), a.sin()) * sheen_r,
+                        egui::Color32::TRANSPARENT,
+                    );
+                }
+                for i in 0..n as u32 {
+                    mesh.add_triangle(0, 1 + i, 2 + i);
+                }
+                painter.add(egui::Shape::mesh(mesh));
+            }
+
+            // 7. 1-px dark ring at the cap edge — seats the cap in the rim.
+            painter.circle_stroke(
+                center,
+                cap_r,
+                egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(0, 0, 0, 0x80)),
+            );
+
+            // 8. Indicator — pure white bar with a black outline, tip
+            //    reaching the outer edge of the knurl. The ONLY element that
+            //    rotates with the value (same 135°→405°, 270° sweep as before).
             let start_angle = std::f32::consts::PI * 0.75;
             let sweep_range = std::f32::consts::PI * 1.5;
-            let dot_center_r = radius + 2.5;
-            // Tick-dot radius scales sub-linearly with knob radius so small
-            // knobs don't carry visually-heavier dots than large knobs.
-            // At radius=16 (large knob, KNOB_SIZE/2) → ≈ 0.75 (unchanged).
-            // At radius=9  (small knob)             → ≈ 0.56.
-            // Floor at 0.45 keeps dots visible on any future smaller knob.
-            // sqrt() scaling keeps perceived visual weight (∝ area ∝ r²)
-            // roughly constant across knob sizes.
-            let dot_radius = (0.75 * (radius / 16.0).sqrt()).max(0.45);
-            let indicator_outer_r = radius;
-            let stem_w = 2.0;
-            let half_w = stem_w * 0.5;
-
-            // Stem at the current value's angle.
             let angle = start_angle + sweep_range * norm;
             let dir = egui::vec2(angle.cos(), angle.sin());
             let perp = egui::vec2(-dir.y, dir.x);
-
-            // Inner concave arc — the stem's inner short side sits at
-            // exactly `visible_core_r` (the *visible* outer edge of the
-            // colored core, after the recessed-under-bevel inset),
-            // sweeping the angle subtended by the stem's width. Each arc
-            // point is on the core's outer circumference, so the stem's
-            // inner edge *is* part of the core's outer curve — perfect
-            // inlay fit.
-            let stem_angle = dir.y.atan2(dir.x);
-            let inner_half_arc = (half_w / visible_core_r).asin();
-            let outer_half_arc = (half_w / indicator_outer_r).asin();
-            let n_arc = 4;
-
-            let mut points: Vec<egui::Pos2> = Vec::with_capacity(2 * n_arc + 4);
-
-            // Outer short side: arc at `indicator_outer_r = radius` —
-            // the rubber sleeve's outer circumference. The stem's outer
-            // edge sits flush with the rim, curving along the same arc
-            // as the sleeve's outer perimeter.
-            for i in 0..=n_arc {
-                let t = i as f32 / n_arc as f32;
-                let a = stem_angle + outer_half_arc - 2.0 * outer_half_arc * t;
-                points.push(center + egui::vec2(a.cos(), a.sin()) * indicator_outer_r);
-            }
-            // Inner short side: concave arc on the visible core's outer
-            // edge, swept the OTHER way (top → bot) so the polygon walks
-            // CCW around the stem.
-            for i in 0..=n_arc {
-                let t = i as f32 / n_arc as f32;
-                let a = stem_angle - inner_half_arc + 2.0 * inner_half_arc * t;
-                points.push(center + egui::vec2(a.cos(), a.sin()) * visible_core_r);
-            }
-            let _ = perp; // perp computed for clarity; arcs use angles directly
-
-            painter.add(egui::epaint::PathShape {
-                points,
-                closed: true,
-                fill: theme::KNOB_INDICATOR,
-                stroke: egui::epaint::PathStroke::NONE,
-            });
-
-            // Tick dots — uniform round white markers. When the indicator
-            // angle matches a tick angle, indicator's tip kisses the
-            // dot's inner edge.
-            for i in 0..=10 {
-                let tick_angle = start_angle + sweep_range * (i as f32 / 10.0);
-                let tdir = egui::vec2(tick_angle.cos(), tick_angle.sin());
-                let dot_center = center + tdir * dot_center_r;
-                painter.circle_filled(dot_center, dot_radius, theme::KNOB_INDICATOR);
-            }
+            let r_out = radius * 0.96;
+            let r_in = radius * 0.28;
+            let hw = (radius * 0.08).max(1.0);
+            let bar = |ro: f32, ri: f32, w: f32| {
+                vec![
+                    center + dir * ro + perp * w,
+                    center + dir * ro - perp * w,
+                    center + dir * ri - perp * w,
+                    center + dir * ri + perp * w,
+                ]
+            };
+            // Black outline (slightly longer + wider) underneath…
+            painter.add(egui::Shape::convex_polygon(
+                bar(r_out + 1.0, r_in - 1.0, hw + 1.0),
+                egui::Color32::BLACK,
+                egui::Stroke::NONE,
+            ));
+            // …pure-white core on top.
+            painter.add(egui::Shape::convex_polygon(
+                bar(r_out, r_in, hw),
+                egui::Color32::WHITE,
+                egui::Stroke::NONE,
+            ));
 
             // 8. Write value to display when hovered/dragged. The expiry
             // timestamp lets the OUTPUT display linger on the most-recent
