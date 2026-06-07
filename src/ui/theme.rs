@@ -52,8 +52,7 @@ pub const KNOB_DIMPLE: egui::Color32 =
 pub const KNURL_DARK: egui::Color32 = egui::Color32::from_rgb(0x13, 0x13, 0x13);
 pub const KNURL_LIGHT: egui::Color32 = egui::Color32::from_rgb(0x2d, 0x2d, 0x2d);
 pub const KNOB_BODY: egui::Color32 = egui::Color32::from_rgb(0x1c, 0x1c, 0x1c);
-pub const KNOB_DROP: egui::Color32 =
-    egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0x80);
+pub const KNOB_DROP: egui::Color32 = egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0x80);
 
 // Section knob cores (Vintage MPC palette)
 pub const SECTION_TOP: egui::Color32 = egui::Color32::from_rgb(0xd4, 0x95, 0x26); // amber
@@ -113,8 +112,12 @@ pub const TICK_MAJOR: egui::Color32 =
 pub const TICK_MINOR: egui::Color32 =
     egui::Color32::from_rgba_premultiplied(0x30, 0x30, 0x30, 0x26);
 
-// Divider
-pub const DIVIDER: egui::Color32 = egui::Color32::from_rgba_premultiplied(0x08, 0x08, 0x08, 0x08);
+// Divider — section separators drawn as a thin engraved groove (dark line +
+// a faint light edge). Raised from the near-invisible 0x08 alpha so the
+// SUB|TOP, MID and EQ dividers actually read on the plate.
+pub const DIVIDER: egui::Color32 = egui::Color32::from_rgba_premultiplied(0x00, 0x00, 0x00, 0x70);
+pub const DIVIDER_HI: egui::Color32 =
+    egui::Color32::from_rgba_premultiplied(0x9a, 0x9a, 0x9a, 0x22);
 
 // Font
 pub const FONT_NAME: &str = "JetBrains Mono";

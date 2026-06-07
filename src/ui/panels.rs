@@ -816,6 +816,33 @@ impl<'a> MasterRow<'a> {
     }
 }
 
+/// Vertical section separator: a thin dark engraved groove with a faint light
+/// edge to its right, so it reads as cut into the plate (not just printed).
+fn draw_v_divider(painter: &egui::Painter, x: f32, y0: f32, y1: f32) {
+    painter.line_segment(
+        [egui::pos2(x, y0), egui::pos2(x, y1)],
+        egui::Stroke::new(1.0, theme::DIVIDER),
+    );
+    painter.line_segment(
+        [egui::pos2(x + 1.0, y0), egui::pos2(x + 1.0, y1)],
+        egui::Stroke::new(1.0, theme::DIVIDER_HI),
+    );
+}
+
+/// Horizontal section separator — same engraved look as [`draw_v_divider`]
+/// (dark line + a faint light edge below it). Used to split the SUB|TOP (grey
+/// + amber) cluster from the MID (green) cluster, and above the EQ cluster.
+fn draw_h_divider(painter: &egui::Painter, x0: f32, x1: f32, y: f32) {
+    painter.line_segment(
+        [egui::pos2(x0, y), egui::pos2(x1, y)],
+        egui::Stroke::new(1.0, theme::DIVIDER),
+    );
+    painter.line_segment(
+        [egui::pos2(x0, y + 1.0), egui::pos2(x1, y + 1.0)],
+        egui::Stroke::new(1.0, theme::DIVIDER_HI),
+    );
+}
+
 /// Draw the SUB | TOP row (labels + groove + divider + knobs).
 /// Returns the y coordinate where the knob row starts (so callers can stack
 /// the next row).
@@ -838,12 +865,11 @@ pub fn draw_sub_top_row(
             panel_rect.right() - CONTENT_LEFT + 4.0,
             row_groove_y,
         );
-        painter.line_segment(
-            [
-                egui::pos2(divider_x, row_groove_y + 2.0),
-                egui::pos2(divider_x, row_knob_y + KNOB_SIZE + 30.0),
-            ],
-            egui::Stroke::new(1.0, theme::DIVIDER),
+        draw_v_divider(
+            painter,
+            divider_x,
+            row_groove_y + 2.0,
+            row_knob_y + KNOB_SIZE + 30.0,
         );
     }
 
@@ -1146,6 +1172,7 @@ pub fn draw_mid_row(
 ) -> f32 {
     let row_groove_y = sub_top_bottom_y + 14.0;
     let row_knob_y = row_groove_y + 4.0;
+    let divider_x = panel_rect.left() + CONTENT_LEFT + KNOB_SPACING * 5.0 - 6.0;
 
     {
         let painter = ui.painter();
@@ -1153,6 +1180,20 @@ pub fn draw_mid_row(
             painter,
             panel_rect.left() + CONTENT_LEFT - 4.0,
             panel_rect.right() - CONTENT_LEFT + 4.0,
+            row_groove_y,
+        );
+        draw_v_divider(
+            painter,
+            divider_x,
+            row_groove_y + 2.0,
+            row_knob_y + KNOB_SIZE + 30.0,
+        );
+        // Horizontal separator between the SUB|TOP (grey + amber) cluster above
+        // and the MID (green) cluster here — spans the 10-knob cluster width.
+        draw_h_divider(
+            painter,
+            panel_rect.left() + CONTENT_LEFT - 4.0,
+            panel_rect.left() + CONTENT_LEFT + KNOB_SPACING * 10.0 - 8.0,
             row_groove_y,
         );
     }
@@ -1466,7 +1507,11 @@ pub fn draw_sat_eq_row(
     let row_label_y = mid_bottom_y;
     let row_groove_y = row_label_y + 14.0;
     let row_knob_y = row_groove_y + 4.0;
-    let eq_divider_x = panel_rect.left() + CONTENT_LEFT + KNOB_SPACING * 4.0 + 40.0;
+    // Align the EQ column with the SUB|TOP / MID split: divider at the same x
+    // as those rows, and the EQ label + knobs in the same column as TOP/MID's
+    // 6th knob, so the TOP and EQ labels line up vertically.
+    let eq_divider_x = panel_rect.left() + CONTENT_LEFT + KNOB_SPACING * 5.0 - 6.0;
+    let eq_col_x = panel_rect.left() + CONTENT_LEFT + KNOB_SPACING * 5.0;
 
     let row_label_font = crate::ui::layout_overrides::label_font(ui.ctx(), 11.0);
     let sat_label_pos = crate::ui::layout_overrides::instrument_text(
@@ -1482,7 +1527,7 @@ pub fn draw_sat_eq_row(
     let eq_label_pos = crate::ui::layout_overrides::instrument_text(
         ui,
         "label.eq",
-        egui::pos2(eq_divider_x + 10.0, row_knob_y + SAT_CLUSTER_H - 14.0),
+        egui::pos2(eq_col_x, row_knob_y + SAT_CLUSTER_H - 14.0),
         egui::vec2(30.0, 14.0),
         egui::Align2::LEFT_TOP,
     );
@@ -1513,12 +1558,19 @@ pub fn draw_sat_eq_row(
             panel_rect.right() - CONTENT_LEFT + 4.0,
             row_groove_y,
         );
-        painter.line_segment(
-            [
-                egui::pos2(eq_divider_x, row_groove_y + 2.0),
-                egui::pos2(eq_divider_x, row_knob_y + SAT_CLUSTER_H),
-            ],
-            egui::Stroke::new(1.0, theme::DIVIDER),
+        draw_v_divider(
+            painter,
+            eq_divider_x,
+            row_groove_y + 2.0,
+            row_knob_y + KNOB_SIZE + 30.0,
+        );
+        // Half-length horizontal separator above the EQ cluster (mirrors the
+        // SUB|TOP↔MID one, but only as wide as the 5 EQ knobs).
+        draw_h_divider(
+            painter,
+            eq_divider_x,
+            eq_col_x + KNOB_SPACING * 5.0 - 8.0,
+            row_groove_y,
         );
     }
 
@@ -1646,7 +1698,7 @@ pub fn draw_sat_eq_row(
 
     // EQ: 5 knobs
     let eq_rect = egui::Rect::from_min_size(
-        egui::pos2(eq_divider_x + 10.0, row_knob_y),
+        egui::pos2(eq_col_x, row_knob_y),
         egui::vec2(KNOB_SPACING * 5.0, KNOB_SIZE + 30.0),
     );
     let eq_rect = crate::ui::layout_overrides::instrument(ui, "row.eq.knobs", eq_rect);

@@ -387,15 +387,14 @@ impl Default for NinerParams {
         //   to avoid a first-frame resize flash and keep it in sync on badge use.
         let ui_scale = crate::util::paths::load_ui_scale();
         let (bw, bh) = BASE_WINDOW_SIZE;
-        let (init_w, init_h) =
-            if crate::IS_STANDALONE.load(std::sync::atomic::Ordering::Relaxed) {
-                (bw, bh)
-            } else {
-                (
-                    (bw as f32 * ui_scale).round() as u32,
-                    (bh as f32 * ui_scale).round() as u32,
-                )
-            };
+        let (init_w, init_h) = if crate::IS_STANDALONE.load(std::sync::atomic::Ordering::Relaxed) {
+            (bw, bh)
+        } else {
+            (
+                (bw as f32 * ui_scale).round() as u32,
+                (bh as f32 * ui_scale).round() as u32,
+            )
+        };
 
         Self {
             editor_state: EguiState::from_size(init_w, init_h),

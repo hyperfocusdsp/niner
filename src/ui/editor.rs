@@ -214,6 +214,14 @@ pub fn create(
     // via painter.image color multiply, so one bake serves all section
     // colours.
     let knob_cap_texture: Arc<Mutex<Option<egui::TextureHandle>>> = Arc::new(Mutex::new(None));
+    // Soft contact/drop shadow for the knob (`assets/knob_shadow.png`), baked
+    // in the same Cycles pass via a shadow-catcher plane. Drawn UNtinted under
+    // the tinted cap so the shadow stays neutral for every section colour.
+    let knob_shadow_texture: Arc<Mutex<Option<egui::TextureHandle>>> = Arc::new(Mutex::new(None));
+    // Neutral knob wear overlay (`assets/knob_wear.png`) — micro-scratches /
+    // patina, overlaid per knob with a hashed rotation so each knob is
+    // slightly unique. Drawn over the tinted cap, under the indicator.
+    let knob_wear_texture: Arc<Mutex<Option<egui::TextureHandle>>> = Arc::new(Mutex::new(None));
     // Cycles-baked display reflection overlay
     // (`assets/display_reflection.png`). Same lazy-upload pattern as the
     // chassis bake; replaces the procedural top sheen + 1-px specular line
@@ -222,8 +230,7 @@ pub fn create(
         Arc::new(Mutex::new(None));
     // Glossy display panel (`assets/display_bg.png`) — drawn as the OUTPUT
     // display background (replaces the red-LCD fill) when present.
-    let display_bg_texture: Arc<Mutex<Option<egui::TextureHandle>>> =
-        Arc::new(Mutex::new(None));
+    let display_bg_texture: Arc<Mutex<Option<egui::TextureHandle>>> = Arc::new(Mutex::new(None));
     // Identity of the egui::Context the cached TextureHandles above were
     // uploaded against. Bitwig destroys the plugin window's GL context on
     // close and creates a new one on reopen; the renderer's texture cache
@@ -341,6 +348,8 @@ pub fn create(
                     *chassis_texture.lock() = None;
                     *screws_texture.lock() = None;
                     *knob_cap_texture.lock() = None;
+                    *knob_shadow_texture.lock() = None;
+                    *knob_wear_texture.lock() = None;
                     *display_reflection_texture.lock() = None;
                     *display_bg_texture.lock() = None;
                     use std::sync::atomic::Ordering;
@@ -681,10 +690,15 @@ pub fn create(
                                     [w as usize, h as usize],
                                     &pixels,
                                 );
+                                // Mipmaps kill the minification aliasing (1280²
+                                // bake -> ~18-50 px knobs). Crispness comes from
+                                // the bake's defined features (tight highlight,
+                                // crisp rim + inner ring), not the sampler.
                                 let handle = ctx.load_texture(
                                     "niner_knob_cap",
                                     color_image,
-                                    egui::TextureOptions::LINEAR,
+                                    egui::TextureOptions::LINEAR
+                                        .with_mipmap_mode(Some(egui::TextureFilter::Linear)),
                                 );
                                 ctx.data_mut(|d| {
                                     d.insert_temp(
@@ -699,44 +713,66 @@ pub fn create(
                         }
                     }
 
-                    // Per-section glossy knob caps (assets/knob_<section>.png),
-                    // sliced from the photoreal sheet. Loaded once per egui
-                    // context (ctx.data is fresh on a Bitwig reopen → reloads)
-                    // and stashed by id; `section_cap_handle` fetches them and
-                    // knob.rs blits them UNTINTED for true per-color speculars.
+                    // Knob contact shadow (lazy upload). Same pattern as the
+                    // cap — stash a clone in ctx.data so knob.rs can blit it
+                    // under the tinted cap without threading a handle through
+                    // every call site.
                     {
-                        let have_caps = ctx.data(|d| {
-                            d.get_temp::<egui::TextureHandle>(egui::Id::new("niner_knob_sub"))
-                                .is_some()
-                        });
-                        if !have_caps {
-                            let section_assets: [(&str, &[u8]); 6] = [
-                                ("niner_knob_sub", include_bytes!("../../assets/knob_sub.png")),
-                                ("niner_knob_top", include_bytes!("../../assets/knob_top.png")),
-                                ("niner_knob_mid", include_bytes!("../../assets/knob_mid.png")),
-                                ("niner_knob_sat", include_bytes!("../../assets/knob_sat.png")),
-                                ("niner_knob_eq", include_bytes!("../../assets/knob_eq.png")),
-                                (
-                                    "niner_knob_master",
-                                    include_bytes!("../../assets/knob_master.png"),
-                                ),
-                            ];
-                            for (id, bytes) in section_assets {
-                                if let Ok(img) = image::load_from_memory(bytes) {
-                                    let rgba = img.to_rgba8();
-                                    let (w, h) = rgba.dimensions();
-                                    let pixels = rgba.into_raw();
-                                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                                        [w as usize, h as usize],
-                                        &pixels,
+                        let mut tex = knob_shadow_texture.lock();
+                        if tex.is_none() {
+                            let bytes = include_bytes!("../../assets/knob_shadow.png");
+                            if let Ok(img) = image::load_from_memory(bytes) {
+                                let rgba = img.to_rgba8();
+                                let (w, h) = rgba.dimensions();
+                                let pixels = rgba.into_raw();
+                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                    [w as usize, h as usize],
+                                    &pixels,
+                                );
+                                let handle = ctx.load_texture(
+                                    "niner_knob_shadow",
+                                    color_image,
+                                    egui::TextureOptions::LINEAR
+                                        .with_mipmap_mode(Some(egui::TextureFilter::Linear)),
+                                );
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(
+                                        egui::Id::new("niner_knob_shadow_handle"),
+                                        handle.clone(),
                                     );
-                                    let handle = ctx.load_texture(
-                                        id,
-                                        color_image,
-                                        egui::TextureOptions::LINEAR,
+                                });
+                                *tex = Some(handle);
+                            }
+                        }
+                    }
+
+                    // Knob wear overlay (lazy upload). Mipmapped (it's minified
+                    // to small knobs) and stashed in ctx.data for knob.rs.
+                    {
+                        let mut tex = knob_wear_texture.lock();
+                        if tex.is_none() {
+                            let bytes = include_bytes!("../../assets/knob_wear.png");
+                            if let Ok(img) = image::load_from_memory(bytes) {
+                                let rgba = img.to_rgba8();
+                                let (w, h) = rgba.dimensions();
+                                let pixels = rgba.into_raw();
+                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                    [w as usize, h as usize],
+                                    &pixels,
+                                );
+                                let handle = ctx.load_texture(
+                                    "niner_knob_wear",
+                                    color_image,
+                                    egui::TextureOptions::LINEAR
+                                        .with_mipmap_mode(Some(egui::TextureFilter::Linear)),
+                                );
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(
+                                        egui::Id::new("niner_knob_wear_handle"),
+                                        handle.clone(),
                                     );
-                                    ctx.data_mut(|d| d.insert_temp(egui::Id::new(id), handle));
-                                }
+                                });
+                                *tex = Some(handle);
                             }
                         }
                     }
@@ -818,114 +854,114 @@ pub fn create(
                     // re-run `rsvg-convert | magick -trim` and update these
                     // ratios when the wordmark/badge SVGs change.
                     if SHOW_HEADER_LOGO {
-                    let lockup_h = 20.0;
-                    let nine_w = lockup_h * (64.0 / 80.0); // ~16.0 px
-                    let wordmark_w = lockup_h * (342.0 / 80.0); // ~85.5 px
-                    let lockup_gap = 5.0;
+                        let lockup_h = 20.0;
+                        let nine_w = lockup_h * (64.0 / 80.0); // ~16.0 px
+                        let wordmark_w = lockup_h * (342.0 / 80.0); // ~85.5 px
+                        let lockup_gap = 5.0;
 
-                    // "9" badge — sits at CONTENT_LEFT, left of the wordmark.
-                    {
-                        let mut tex = nine_badge_texture.lock();
-                        if tex.is_none() {
-                            let bytes = include_bytes!("../../assets/niner_9.png");
-                            if let Ok(img) = image::load_from_memory(bytes) {
-                                let rgba = img.to_rgba8();
-                                let (w, h) = rgba.dimensions();
-                                let mut pixels = rgba.into_raw();
-                                // Recolor oxide-red → brand amber (#d49526).
-                                // The PNG uses the red channel as brightness;
-                                // map it to the amber hue so no new asset is needed.
-                                for chunk in pixels.chunks_mut(4) {
-                                    let r = chunk[0] as f32 / 255.0;
-                                    chunk[0] = (0xd4u8 as f32 * r) as u8;
-                                    chunk[1] = (0x95u8 as f32 * r) as u8;
-                                    chunk[2] = (0x26u8 as f32 * r) as u8;
+                        // "9" badge — sits at CONTENT_LEFT, left of the wordmark.
+                        {
+                            let mut tex = nine_badge_texture.lock();
+                            if tex.is_none() {
+                                let bytes = include_bytes!("../../assets/niner_9.png");
+                                if let Ok(img) = image::load_from_memory(bytes) {
+                                    let rgba = img.to_rgba8();
+                                    let (w, h) = rgba.dimensions();
+                                    let mut pixels = rgba.into_raw();
+                                    // Recolor oxide-red → brand amber (#d49526).
+                                    // The PNG uses the red channel as brightness;
+                                    // map it to the amber hue so no new asset is needed.
+                                    for chunk in pixels.chunks_mut(4) {
+                                        let r = chunk[0] as f32 / 255.0;
+                                        chunk[0] = (0xd4u8 as f32 * r) as u8;
+                                        chunk[1] = (0x95u8 as f32 * r) as u8;
+                                        chunk[2] = (0x26u8 as f32 * r) as u8;
+                                    }
+                                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                        [w as usize, h as usize],
+                                        &pixels,
+                                    );
+                                    *tex = Some(ctx.load_texture(
+                                        "niner_9",
+                                        color_image,
+                                        egui::TextureOptions::LINEAR,
+                                    ));
                                 }
-                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                                    [w as usize, h as usize],
-                                    &pixels,
+                            }
+                            if let Some(t) = tex.as_ref() {
+                                let base_rect = egui::Rect::from_min_size(
+                                    egui::pos2(
+                                        panel_rect.left() + CONTENT_LEFT,
+                                        header_center_y - lockup_h * 0.5,
+                                    ),
+                                    egui::vec2(nine_w, lockup_h),
                                 );
-                                *tex = Some(ctx.load_texture(
-                                    "niner_9",
-                                    color_image,
-                                    egui::TextureOptions::LINEAR,
-                                ));
+                                let rect = crate::ui::layout_overrides::instrument(
+                                    ui,
+                                    "header.niner_9",
+                                    base_rect,
+                                );
+                                ui.painter().image(
+                                    t.id(),
+                                    rect,
+                                    egui::Rect::from_min_max(
+                                        egui::pos2(0.0, 0.0),
+                                        egui::pos2(1.0, 1.0),
+                                    ),
+                                    // Identity tint — render the PNG's actual
+                                    // oxide red, don't multiply by `theme::WHITE`
+                                    // (which is now brand bone, not pure white).
+                                    egui::Color32::WHITE,
+                                );
                             }
                         }
-                        if let Some(t) = tex.as_ref() {
-                            let base_rect = egui::Rect::from_min_size(
-                                egui::pos2(
-                                    panel_rect.left() + CONTENT_LEFT,
-                                    header_center_y - lockup_h * 0.5,
-                                ),
-                                egui::vec2(nine_w, lockup_h),
-                            );
-                            let rect = crate::ui::layout_overrides::instrument(
-                                ui,
-                                "header.niner_9",
-                                base_rect,
-                            );
-                            ui.painter().image(
-                                t.id(),
-                                rect,
-                                egui::Rect::from_min_max(
-                                    egui::pos2(0.0, 0.0),
-                                    egui::pos2(1.0, 1.0),
-                                ),
-                                // Identity tint — render the PNG's actual
-                                // oxide red, don't multiply by `theme::WHITE`
-                                // (which is now brand bone, not pure white).
-                                egui::Color32::WHITE,
-                            );
-                        }
-                    }
 
-                    // NINER wordmark — sits to the right of the "9" badge.
-                    {
-                        let mut tex = logo_texture.lock();
-                        if tex.is_none() {
-                            let bytes = include_bytes!("../../assets/niner_logo.png");
-                            if let Ok(img) = image::load_from_memory(bytes) {
-                                let rgba = img.to_rgba8();
-                                let (w, h) = rgba.dimensions();
-                                let pixels = rgba.into_raw();
-                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                                    [w as usize, h as usize],
-                                    &pixels,
+                        // NINER wordmark — sits to the right of the "9" badge.
+                        {
+                            let mut tex = logo_texture.lock();
+                            if tex.is_none() {
+                                let bytes = include_bytes!("../../assets/niner_logo.png");
+                                if let Ok(img) = image::load_from_memory(bytes) {
+                                    let rgba = img.to_rgba8();
+                                    let (w, h) = rgba.dimensions();
+                                    let pixels = rgba.into_raw();
+                                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                        [w as usize, h as usize],
+                                        &pixels,
+                                    );
+                                    *tex = Some(ctx.load_texture(
+                                        "niner_logo",
+                                        color_image,
+                                        egui::TextureOptions::LINEAR,
+                                    ));
+                                }
+                            }
+                            if let Some(t) = tex.as_ref() {
+                                let base_logo_rect = egui::Rect::from_min_size(
+                                    egui::pos2(
+                                        panel_rect.left() + CONTENT_LEFT + nine_w + lockup_gap,
+                                        header_center_y - lockup_h * 0.5,
+                                    ),
+                                    egui::vec2(wordmark_w, lockup_h),
                                 );
-                                *tex = Some(ctx.load_texture(
-                                    "niner_logo",
-                                    color_image,
-                                    egui::TextureOptions::LINEAR,
-                                ));
+                                let logo_rect = crate::ui::layout_overrides::instrument(
+                                    ui,
+                                    "header.niner_logo",
+                                    base_logo_rect,
+                                );
+                                ui.painter().image(
+                                    t.id(),
+                                    logo_rect,
+                                    egui::Rect::from_min_max(
+                                        egui::pos2(0.0, 0.0),
+                                        egui::pos2(1.0, 1.0),
+                                    ),
+                                    // Identity tint — render the PNG's actual
+                                    // bone, don't multiply by `theme::WHITE`.
+                                    egui::Color32::WHITE,
+                                );
                             }
                         }
-                        if let Some(t) = tex.as_ref() {
-                            let base_logo_rect = egui::Rect::from_min_size(
-                                egui::pos2(
-                                    panel_rect.left() + CONTENT_LEFT + nine_w + lockup_gap,
-                                    header_center_y - lockup_h * 0.5,
-                                ),
-                                egui::vec2(wordmark_w, lockup_h),
-                            );
-                            let logo_rect = crate::ui::layout_overrides::instrument(
-                                ui,
-                                "header.niner_logo",
-                                base_logo_rect,
-                            );
-                            ui.painter().image(
-                                t.id(),
-                                logo_rect,
-                                egui::Rect::from_min_max(
-                                    egui::pos2(0.0, 0.0),
-                                    egui::pos2(1.0, 1.0),
-                                ),
-                                // Identity tint — render the PNG's actual
-                                // bone, don't multiply by `theme::WHITE`.
-                                egui::Color32::WHITE,
-                            );
-                        }
-                    }
                     } // end if SHOW_HEADER_LOGO (chassis bakes the wordmark)
 
                     // UI scale badge — discreet click-to-cycle, lives in the
@@ -1199,7 +1235,11 @@ pub fn create(
                                     .load(std::sync::atomic::Ordering::Relaxed);
                                 tracing::info!(
                                     "[ui_scale] cycled → {next}x ({})",
-                                    if live { "applied live" } else { "relaunch to apply" }
+                                    if live {
+                                        "applied live"
+                                    } else {
+                                        "relaunch to apply"
+                                    }
                                 );
                             }
                         }

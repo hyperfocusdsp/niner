@@ -24,18 +24,17 @@ pub fn outlined_text(
     font: egui::FontId,
     color: egui::Color32,
 ) -> egui::Rect {
-    let outline = egui::Color32::from_black_alpha(210);
-    for (dx, dy) in [
-        (-1.0, -1.0),
-        (0.0, -1.0),
-        (1.0, -1.0),
-        (-1.0, 0.0),
-        (1.0, 0.0),
-        (-1.0, 1.0),
-        (0.0, 1.0),
-        (1.0, 1.0),
-    ] {
-        painter.text(pos + egui::vec2(dx, dy), anchor, text, font.clone(), outline);
+    // Thin, lighter outline — 4 cardinal offsets (no diagonals) at a lower
+    // alpha, so labels stay legible over the plate without a heavy border.
+    let outline = egui::Color32::from_black_alpha(150);
+    for (dx, dy) in [(0.0, -1.0), (0.0, 1.0), (-1.0, 0.0), (1.0, 0.0)] {
+        painter.text(
+            pos + egui::vec2(dx, dy),
+            anchor,
+            text,
+            font.clone(),
+            outline,
+        );
     }
     painter.text(pos, anchor, text, font, color)
 }
@@ -355,30 +354,20 @@ pub fn knob_cap_handle(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     ctx.data(|d| d.get_temp::<egui::TextureHandle>(egui::Id::new("niner_knob_cap_handle")))
 }
 
-/// Pull the per-section glossy knob cap for `core_color` out of ctx.data, if
-/// one was baked for that section. These photoreal caps have the color and
-/// white speculars baked in, so the caller blits them UNTINTED; sections
-/// without a match fall back to the tinted neutral `knob_cap`.
-pub fn section_cap_handle(
-    ctx: &egui::Context,
-    core_color: egui::Color32,
-) -> Option<egui::TextureHandle> {
-    let id = if core_color == theme::SECTION_SUB {
-        "niner_knob_sub"
-    } else if core_color == theme::SECTION_TOP {
-        "niner_knob_top"
-    } else if core_color == theme::SECTION_MID {
-        "niner_knob_mid"
-    } else if core_color == theme::SECTION_SAT {
-        "niner_knob_sat"
-    } else if core_color == theme::SECTION_EQ {
-        "niner_knob_eq"
-    } else if core_color == theme::SECTION_MASTER {
-        "niner_knob_master"
-    } else {
-        return None;
-    };
-    ctx.data(|d| d.get_temp::<egui::TextureHandle>(egui::Id::new(id)))
+/// Pull the lazy-loaded knob contact-shadow texture (`assets/knob_shadow.png`)
+/// out of egui's per-context data. `None` until the editor decoded the PNG and
+/// stashed it. Drawn UNtinted under the tinted cap so the shadow stays neutral
+/// regardless of section colour.
+pub fn knob_shadow_handle(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    ctx.data(|d| d.get_temp::<egui::TextureHandle>(egui::Id::new("niner_knob_shadow_handle")))
+}
+
+/// Pull the lazy-loaded knob WEAR overlay (`assets/knob_wear.png`) — neutral
+/// micro-scratches / patina / edge wear, overlaid per knob with a hashed
+/// rotation + scale so each knob looks slightly unique without disturbing the
+/// baked lighting. `None` until the editor decoded the PNG and stashed it.
+pub fn knob_wear_handle(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    ctx.data(|d| d.get_temp::<egui::TextureHandle>(egui::Id::new("niner_knob_wear_handle")))
 }
 
 /// Set to `true` once the display reflection PNG has been uploaded as a
