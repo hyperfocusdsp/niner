@@ -3,7 +3,7 @@ members = ["xtask"]
 
 [package]
 name = "niner"
-version = "0.8.0"
+version = "1.0.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Kick drum synthesizer plugin"
@@ -119,3 +119,16 @@ strip = "symbols"
 # Upstream fix: https://github.com/RustAudio/baseview/pull/212
 [patch."https://github.com/RustAudio/baseview.git"]
 baseview = { git = "https://github.com/Hornfisk/baseview.git", rev = "237d323c729f3aa99476ba3efa50129c5e86cad3" }
+
+# egui-baseview, patched to respect egui's `zoom_factor`. Upstream 0.5.0
+# (BillyDM/egui-baseview@ec70c3f) derives pixels-per-point from the
+# WindowScalePolicy alone and uses it for layout, tessellation, and pointer
+# input — so `Context::set_zoom_factor` is silently ignored and an in-DAW UI
+# scale resizes the window without scaling the content. The fork composes the
+# native scale factor with `zoom_factor` (matching egui-winit) so
+# `set_zoom_factor` scales the UI here too; it is bit-for-bit identical at the
+# default zoom of 1.0. Pinned to the egui-0.31 base niner uses; the upstream
+# PR (against main / egui 0.33) is tracked separately and this pin can drop if
+# it lands.
+[patch."https://github.com/BillyDM/egui-baseview.git"]
+egui-baseview = { git = "https://github.com/Hornfisk/egui-baseview.git", rev = "56fc8194de44261034ad4afe3f2b1c3ce5adbff7" }

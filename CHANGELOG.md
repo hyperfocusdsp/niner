@@ -2,6 +2,37 @@
 
 All notable changes to Niner (formerly Slammer) are documented here.
 
+## [1.0.0] — 2026-06-08
+
+First stable release. Consolidates the 0.8.x visual overhaul and ships
+working in-host UI scaling.
+
+### Added
+
+- **In-DAW UI scale (1× / 1.5× / 2×).** The footer `UI N×` control now
+  scales the whole interface *inside the plugin host*, not just the
+  standalone. This required teaching egui-baseview to honour egui's
+  `zoom_factor` — upstream derived pixels-per-point from the window scale
+  policy alone, so `set_zoom_factor` was geometrically inert and an in-host
+  scale resized the window without scaling its contents. The fix composes
+  the native scale factor with the zoom factor (matching egui-winit) across
+  layout, rendering, and pointer input, and lives in a small fork
+  (<https://github.com/Hornfisk/egui-baseview>, branch `respect-zoom-factor`)
+  pinned via `[patch]` and proposed upstream. Text is re-rasterised at the
+  effective scale, so it stays crisp rather than bitmap-upscaled.
+
+### Changed
+
+- **Photoreal knobs.** Section knobs are Blender/Cycles-baked, runtime-tinted
+  caps with a soft contact shadow, per-knob wear, and a crisp clearcoat.
+- **Faceplate, chrome & icon.** Flat-dark faceplate, engraved section
+  dividers, and a new muted-bone-on-graphite application icon.
+
+### Fixed
+
+- **Section-label spacing.** The `TOP` and `EQ` labels no longer collide with
+  the vertical section divider; both now carry a consistent margin.
+
 ## [0.7.8] — 2026-05-14
 
 ### Changed

@@ -1069,7 +1069,7 @@ dependencies = [
 [[package]]
 name = "egui-baseview"
 version = "0.5.0"
-source = "git+https://github.com/BillyDM/egui-baseview.git?rev=ec70c3fe6b2f070dcacbc22924431edbe24bd1c0#ec70c3fe6b2f070dcacbc22924431edbe24bd1c0"
+source = "git+https://github.com/Hornfisk/egui-baseview.git?rev=56fc8194de44261034ad4afe3f2b1c3ce5adbff7#56fc8194de44261034ad4afe3f2b1c3ce5adbff7"
 dependencies = [
  "baseview",
  "copypasta",
@@ -2106,7 +2106,7 @@ dependencies = [
 
 [[package]]
 name = "niner"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "cpal",
  "directories",

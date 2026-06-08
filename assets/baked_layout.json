@@ -183,13 +183,13 @@
       "font_scale": 1.0
     },
     "label.top": {
-      "pos_offset_x": -6.0,
+      "pos_offset_x": 3.0,
       "pos_offset_y": -69.0,
       "size_scale": 1.0,
       "font_scale": 1.0
     },
     "label.eq": {
-      "pos_offset_x": -7.0,
+      "pos_offset_x": 3.0,
       "pos_offset_y": -67.0,
       "size_scale": 1.0,
       "font_scale": 1.0
