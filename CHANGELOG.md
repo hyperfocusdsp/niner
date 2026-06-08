@@ -2,6 +2,15 @@
 
 All notable changes to Niner (formerly Slammer) are documented here.
 
+## [1.0.1] — 2026-06-08
+
+### Added
+
+- **Scroll-to-adjust on knobs.** Hover any knob and use the mouse wheel to
+  change its value; hold Shift for fine steps. A notch is about 2.5% of the
+  range, about 0.5% with Shift. Convenient for fine-tuning, especially the low
+  end (requested in #2).
+
 ## [1.0.0] — 2026-06-08
 
 First stable release. Consolidates the 0.8.x visual overhaul and ships

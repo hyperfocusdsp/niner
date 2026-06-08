@@ -195,6 +195,24 @@ fn knob_inner(
             result.changed = true;
         }
 
+        // Mouse wheel — scroll-to-adjust while hovering the knob (issue #2).
+        // Scroll up raises the value; Shift fine-tunes. A notch (~50 pt) moves
+        // ~2.5% of the range, ~0.5% with Shift. The caller wraps every
+        // `changed` frame in begin/set/end, so a one-shot scroll writes the
+        // parameter cleanly without a drag gesture.
+        if response.hovered() {
+            let scroll = ui.input(|i| i.raw_scroll_delta.y);
+            if scroll != 0.0 {
+                let speed = if ui.input(|i| i.modifiers.shift) {
+                    0.0001
+                } else {
+                    0.0005
+                };
+                *value = (*value + scroll * speed * (max - min)).clamp(min, max);
+                result.changed = true;
+            }
+        }
+
         // Paint
         if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect);
