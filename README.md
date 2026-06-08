@@ -12,7 +12,7 @@ full master bus (RMS compressor → transformer drive → brickwall limiter
 + user preset browser, one-shot WAV/AIFF bounce, and a fully
 interactive standalone editor.
 
-![Niner](docs/niner.webp?v=0.7.8)
+![Niner](docs/niner.webp?v=1.0.0)
 
 <p align="center">
   <a href="https://hyperfocusdsp.com/plugins/niner/"><img src="https://img.shields.io/badge/Plugin_page-hyperfocusdsp.com-f59e0b?style=for-the-badge" alt="Niner on hyperfocusdsp.com" /></a>
