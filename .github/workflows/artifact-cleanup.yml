@@ -1,0 +1,49 @@
+name: Artifact Cleanup
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'  # weekly, Sunday 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete old artifacts (keep latest per name)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const KEEP_RUNS = 1;
+            const { data: { artifacts } } = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            // Group by name, sort newest first
+            const byName = {};
+            for (const a of artifacts) {
+              if (!byName[a.name]) byName[a.name] = [];
+              byName[a.name].push(a);
+            }
+
+            let deleted = 0;
+            for (const arts of Object.values(byName)) {
+              arts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+              const seenRuns = new Set();
+              for (const a of arts) {
+                seenRuns.add(a.workflow_run?.id);
+                if (seenRuns.size > KEEP_RUNS) {
+                  await github.rest.actions.deleteArtifact({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    artifact_id: a.id,
+                  });
+                  core.info(`Deleted: ${a.name} (${a.id}) from ${a.created_at.slice(0, 10)}`);
+                  deleted++;
+                }
+              }
+            }
+            core.info(`Total deleted: ${deleted}`);
