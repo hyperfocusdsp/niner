@@ -2,6 +2,18 @@
 
 All notable changes to Niner (formerly Slammer) are documented here.
 
+## [1.0.2] — 2026-07-08
+
+### Fixed
+
+- **Factory presets no longer vanish.** "Deleting" a factory preset used to
+  hide it permanently in a per-user list, and because the DEL button
+  re-selects the top preset after each delete, repeated clicks could cascade
+  through the whole bank until only one preset was left. Factory presets can
+  no longer be hidden or deleted (DEL now refuses them), and any install
+  already affected recovers automatically on the next launch. The plugin also
+  logs its preset counts on load so this class of issue is diagnosable.
+
 ## [1.0.1] — 2026-06-08
 
 ### Added

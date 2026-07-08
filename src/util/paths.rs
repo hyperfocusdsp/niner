@@ -8,7 +8,7 @@
 //! |---------|--------------------------------------------|
 //! | Linux   | `$XDG_DATA_HOME/niner` or `~/.local/share/niner` |
 //! | macOS   | `~/Library/Application Support/niner`      |
-//! | Windows | `%APPDATA%\niner\data`                     |
+//! | Windows | `%APPDATA%\Niner\niner\data`               |
 //!
 //! All accessors fall back to `std::env::temp_dir().join("niner")` if the
 //! platform dirs can't be resolved (extremely rare — no `$HOME`, no
@@ -44,10 +44,10 @@ pub fn niner_last_preset_file() -> PathBuf {
     niner_data_dir().join("last_preset.txt")
 }
 
-/// File listing factory preset names the user has explicitly deleted.
-/// One name per line. Factory presets are baked into the binary, so the
-/// only way to "delete" one is to record its name here and filter it
-/// out of `list_all` at runtime.
+/// Legacy file from older builds that let factory presets be "deleted" by
+/// hiding them (one name per line). Hiding factory presets is no longer
+/// supported — `PresetManager::load` deletes this file on startup so any
+/// stale hides are cleared. Kept only so cleanup can find the path.
 pub fn niner_hidden_presets_file() -> PathBuf {
     niner_data_dir().join("hidden_presets.txt")
 }
