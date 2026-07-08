@@ -10,7 +10,6 @@
 //! * Exposing a merged factory+user list to the UI.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -107,23 +106,39 @@ pub fn factory_presets() -> Vec<PresetEntry> {
 pub struct PresetManager {
     factory: Vec<PresetEntry>,
     user: Vec<PresetEntry>,
-    /// Factory preset names the user has deleted. Filtered out of
-    /// `list_all`. Persisted to `niner_hidden_presets_file()`.
-    hidden_factories: HashSet<String>,
     dir: PathBuf,
 }
 
 impl PresetManager {
     pub fn new() -> Self {
-        let dir = paths::niner_preset_dir();
+        Self::load(
+            paths::niner_preset_dir(),
+            paths::niner_hidden_presets_file(),
+        )
+    }
+
+    /// Build a manager from an explicit preset dir + hidden-list file.
+    /// `new()` wires in the real platform paths; tests inject temp dirs.
+    fn load(preset_dir: PathBuf, hidden_file: PathBuf) -> Self {
+        // Auto-heal: older builds recorded "deleted" factory presets in a
+        // hidden-names file and filtered them out of `list_all`. A few stray
+        // DEL clicks could hide almost the whole factory bank with no way to
+        // restore them (the P1 "only 1 preset shows" bug). Hiding factory
+        // presets is no longer supported, so delete any stale file and never
+        // honor it again — every affected install recovers on next launch.
+        let _ = fs::remove_file(&hidden_file);
         let factory = factory_presets();
         let mut mgr = Self {
             factory,
             user: Vec::new(),
-            hidden_factories: load_hidden_factories(),
-            dir,
+            dir: preset_dir,
         };
         mgr.refresh();
+        tracing::info!(
+            factories = mgr.factory.len(),
+            user = mgr.user.len(),
+            "preset library loaded"
+        );
         mgr
     }
 
@@ -153,21 +168,19 @@ impl PresetManager {
 
     /// All presets: factory first, then user. A user preset whose name
     /// matches a factory preset (case-insensitive) shadows the factory
-    /// entry, so "overwriting" a factory means saving a user copy under
-    /// the same name. Factories listed in `hidden_factories` are hidden
-    /// unconditionally — that's how pure-factory deletion works.
-    /// Deleting a user override (or removing a factory from the hidden
-    /// list by saving under the same name) restores the factory entry.
+    /// entry, so "overwriting" a factory means saving a user copy under the
+    /// same name; deleting that user override restores the factory entry.
+    /// Factory presets themselves are always listed — they can't be hidden
+    /// or deleted.
     pub fn list_all(&self) -> Vec<PresetEntry> {
         let mut out: Vec<PresetEntry> = self
             .factory
             .iter()
             .filter(|f| {
-                !self.hidden_factories.contains(&f.name)
-                    && !self
-                        .user
-                        .iter()
-                        .any(|u| u.name.eq_ignore_ascii_case(&f.name))
+                !self
+                    .user
+                    .iter()
+                    .any(|u| u.name.eq_ignore_ascii_case(&f.name))
             })
             .cloned()
             .collect();
@@ -178,9 +191,6 @@ impl PresetManager {
     /// Save a snapshot under `name`. Saving under a factory name writes a
     /// user copy that shadows the factory in `list_all` — the factory
     /// definition itself is never touched, so a `delete` restores it.
-    /// If the name is in the hidden-factories list, saving clears it so
-    /// the user can resurrect a previously-deleted factory by saving
-    /// over it.
     pub fn save(&mut self, name: &str, params: ParamSnapshot) -> Result<(), String> {
         let pf = PresetFile {
             name: name.to_owned(),
@@ -191,22 +201,19 @@ impl PresetManager {
         fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
         let path = self.dir.join(format!("{}.json", sanitize_filename(name)));
         fs::write(&path, json).map_err(|e| e.to_string())?;
-        if self.hidden_factories.remove(name) {
-            persist_hidden_factories(&self.hidden_factories);
-        }
         self.refresh();
         Ok(())
     }
 
-    /// Delete a preset by name. Two cases:
+    /// Delete a preset by name.
     ///
-    /// * If a user file exists for this name, remove it. If the name
-    ///   also matches a factory preset, the factory entry reappears in
-    ///   `list_all` on the next refresh.
-    /// * Otherwise, if the name matches a factory preset, add it to
-    ///   `hidden_factories` and persist. The factory definition is
-    ///   baked into the binary, so hiding is the only sense in which
-    ///   a factory can be "deleted".
+    /// * If a user file exists for this name, remove it. If the name also
+    ///   matches a factory preset, the factory entry reappears in `list_all`
+    ///   on the next refresh.
+    /// * A factory preset itself cannot be deleted — it's baked into the
+    ///   binary, so deletion is refused (the caller surfaces the message).
+    ///   This is deliberate: an earlier build "deleted" factories by hiding
+    ///   them, which could make the whole bank vanish.
     pub fn delete(&mut self, name: &str) -> Result<(), String> {
         if self.user.iter().any(|e| e.name == name) {
             let path = self.dir.join(format!("{}.json", sanitize_filename(name)));
@@ -215,44 +222,9 @@ impl PresetManager {
             return Ok(());
         }
         if self.factory.iter().any(|e| e.name == name) {
-            self.hidden_factories.insert(name.to_owned());
-            persist_hidden_factories(&self.hidden_factories);
-            return Ok(());
+            return Err("Factory presets can't be deleted".to_string());
         }
         Err(format!("\"{name}\" not found"))
-    }
-}
-
-/// Load the set of factory preset names the user has explicitly hidden.
-/// Missing file → empty set. IO errors are logged and swallowed.
-fn load_hidden_factories() -> HashSet<String> {
-    let path = paths::niner_hidden_presets_file();
-    let Ok(data) = fs::read_to_string(&path) else {
-        return HashSet::new();
-    };
-    data.lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(String::from)
-        .collect()
-}
-
-/// Write the hidden-factories set to disk, one name per line. Best-effort;
-/// IO errors are logged and swallowed so a read-only config dir never
-/// crashes the plugin.
-fn persist_hidden_factories(set: &HashSet<String>) {
-    let path = paths::niner_hidden_presets_file();
-    if let Some(parent) = path.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            tracing::warn!(?e, "failed to create hidden-presets dir");
-            return;
-        }
-    }
-    let mut lines: Vec<&str> = set.iter().map(String::as_str).collect();
-    lines.sort_unstable();
-    let body = lines.join("\n");
-    if let Err(e) = fs::write(&path, body) {
-        tracing::warn!(?e, ?path, "failed to write hidden-presets file");
     }
 }
 
@@ -380,5 +352,54 @@ mod tests {
         assert_eq!(pf.params.decay_ms, 250.0);
         assert_eq!(pf.params.mid_phase_offset, 0.0);
         assert_eq!(pf.params.sub_gain, 0.0);
+    }
+
+    /// Regression for the P1 "only 1 factory preset shows" bug: a
+    /// `hidden_presets.txt` listing 13 of the 14 factory names must NOT
+    /// reduce the factory list. Pre-fix this returned 1 (only "hh").
+    #[test]
+    fn hidden_file_is_ignored() {
+        let tmp = std::env::temp_dir().join("niner_test_hidden_ignored");
+        let _ = fs::remove_dir_all(&tmp);
+        let preset_dir = tmp.join("presets");
+        fs::create_dir_all(&preset_dir).unwrap();
+        let hidden_file = tmp.join("hidden_presets.txt");
+        let names: Vec<String> = factory_presets()
+            .into_iter()
+            .map(|p| p.name)
+            .filter(|n| n != "hh")
+            .collect();
+        assert_eq!(names.len(), 13);
+        fs::write(&hidden_file, names.join("\n")).unwrap();
+
+        let mgr = PresetManager::load(preset_dir, hidden_file);
+        assert_eq!(
+            mgr.list_all().len(),
+            14,
+            "a stale hidden_presets.txt must not suppress factory presets"
+        );
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Factory presets can no longer be deleted/hidden — `delete` on a
+    /// factory-only name is refused and the list is unchanged.
+    #[test]
+    fn delete_factory_is_refused() {
+        let tmp = std::env::temp_dir().join("niner_test_delete_factory");
+        let _ = fs::remove_dir_all(&tmp);
+        let preset_dir = tmp.join("presets");
+        fs::create_dir_all(&preset_dir).unwrap();
+        let mut mgr = PresetManager::load(preset_dir, tmp.join("hidden_presets.txt"));
+        let before = mgr.list_all().len();
+        assert!(
+            mgr.delete("hh").is_err(),
+            "deleting a factory preset must be refused"
+        );
+        assert_eq!(
+            mgr.list_all().len(),
+            before,
+            "a refused delete must not change the preset list"
+        );
+        let _ = fs::remove_dir_all(&tmp);
     }
 }

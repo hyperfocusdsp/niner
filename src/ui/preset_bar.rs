@@ -414,11 +414,10 @@ impl PresetBar {
                 egui::vec2(btn_w, btn_h),
             ),
         );
-        // Every preset — factory or user — is now deletable. Factory
-        // deletions are persisted as a hidden-names list by
-        // `PresetManager::delete`; "Init" stays listed because it's
-        // defined in the factory set and will reappear if the hidden
-        // entry is cleared (e.g. by saving under that name).
+        // Only user presets are deletable. `PresetManager::delete` refuses
+        // factory presets (they're baked into the binary) and returns an
+        // Err that surfaces via `status_msg` below; the DEL button stays
+        // enabled so the user gets that feedback.
         let can_delete = !self.cached.is_empty();
         let del_resp = ui.interact(del_rect, egui::Id::new("preset_del"), egui::Sense::click());
         let del_pressed = del_resp.is_pointer_button_down_on() && can_delete;
