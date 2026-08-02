@@ -17,7 +17,11 @@ pub static IS_STANDALONE: AtomicBool = AtomicBool::new(false);
 mod export;
 mod logging;
 mod plugin;
-mod presets;
+
+// Public so integration tests can assert the standalone-only gating on the
+// last-used-preset file (see `tests/last_preset_daw_isolation.rs`). Same
+// no-external-surface rationale as `dsp` below.
+pub mod presets;
 
 // Public so integration tests under `tests/` can drive the engine, snapshot
 // params, and reproduce sequencer persist races. The cdylib bundles don't

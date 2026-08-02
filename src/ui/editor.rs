@@ -592,24 +592,31 @@ pub fn create(
                 }
             }
 
-            // Restore last-used preset once the audio thread has confirmed
-            // we're standalone. Skipped entirely in DAW mode — the host
-            // restores parameter state from the project file itself, and we
-            // don't want to clobber it.
-            if sequencer
-                .transport_probed
-                .load(std::sync::atomic::Ordering::Relaxed)
-            {
+            // Restore the last-used preset — standalone only. In a DAW the
+            // host has already restored this instance's parameters from the
+            // song by the time the editor opens, so applying a preset on top
+            // would destroy the user's per-project sound.
+            //
+            // This previously gated on the transport (`is_host_synced`), which
+            // only reads "DAW" once the host has been seen playing *and then*
+            // stopped, while `transport_probed` flipped true on the very first
+            // buffer. A freshly loaded song sits stopped, so the guard reported
+            // "standalone" and clobbered the restored state (Renoise,
+            // 2026-08-02). `IS_STANDALONE` is set only by `run_standalone()`,
+            // so it cannot misfire and needs no audio-thread probe.
+            //
+            // `pending_restore` is already `None` in plugin mode because
+            // `load_last_preset_name` is gated on the same flag; this is the
+            // second layer. See tests/last_preset_daw_isolation.rs.
+            if crate::IS_STANDALONE.load(std::sync::atomic::Ordering::Relaxed) {
                 let mut pending = pending_restore.lock();
                 if let Some(name) = pending.take() {
-                    if !sequencer.is_host_synced() {
-                        let mgr = preset_manager.lock();
-                        if let Some(entry) = mgr.list_all().into_iter().find(|e| e.name == name) {
-                            entry.params.apply(setter, &params);
-                            // Reflect the selection in the preset bar UI.
-                            let mut bar = preset_bar.lock();
-                            bar.select_by_name(&entry.name);
-                        }
+                    let mgr = preset_manager.lock();
+                    if let Some(entry) = mgr.list_all().into_iter().find(|e| e.name == name) {
+                        entry.params.apply(setter, &params);
+                        // Reflect the selection in the preset bar UI.
+                        let mut bar = preset_bar.lock();
+                        bar.select_by_name(&entry.name);
                     }
                 }
             }

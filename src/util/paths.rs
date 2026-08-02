@@ -20,8 +20,19 @@ const ORG_QUALIFIER: &str = "";
 const ORG: &str = "Niner";
 const APP: &str = "niner";
 
+/// Environment override for the data root. Set it to relocate every preset,
+/// log, and sidecar file: useful for portable installs, for dev builds that
+/// shouldn't touch a real user's presets, and for tests that need a sandbox.
+/// An empty value is ignored so `NINER_DATA_DIR=` behaves like "unset".
+pub const DATA_DIR_ENV: &str = "NINER_DATA_DIR";
+
 /// Root directory for all Niner on-disk state.
 pub fn niner_data_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os(DATA_DIR_ENV) {
+        if !dir.is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
     directories::ProjectDirs::from(ORG_QUALIFIER, ORG, APP)
         .map(|p| p.data_dir().to_path_buf())
         .unwrap_or_else(fallback_dir)

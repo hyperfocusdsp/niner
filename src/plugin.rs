@@ -413,12 +413,13 @@ impl Plugin for Niner {
         } else if self.host_ever_played {
             self.host_ever_stopped = true;
         }
+        // Drives sequencer play/stop only. This is a *heuristic* — it stays
+        // false in a DAW until the host has been seen playing and then
+        // stopped — so never use it to answer "am I hosted in a DAW?".
+        // `crate::IS_STANDALONE` answers that exactly. See
+        // tests/last_preset_daw_isolation.rs for the bug that taught us this.
         let is_daw = self.host_ever_stopped;
         self.sequencer.host_synced.store(is_daw, Ordering::Relaxed);
-        // Signal the editor that host_synced now reflects reality.
-        self.sequencer
-            .transport_probed
-            .store(true, Ordering::Relaxed);
 
         if is_daw {
             // ----- Host-synced mode -----

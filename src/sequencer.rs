@@ -45,11 +45,6 @@ pub struct Sequencer {
     /// standalone mode, or host transport is playing in a DAW). UI reads
     /// this to render the PLAY/STOP button state and the playhead.
     pub running_effective: AtomicBool,
-    /// Set by the audio thread on its first `process()` call — signals that
-    /// `host_synced` now reflects reality. The editor uses this to defer
-    /// standalone-only actions (e.g. restoring last session) until after
-    /// the DAW/standalone decision has been made.
-    pub transport_probed: AtomicBool,
     /// UI-thread mirror of the step bitmask for DAW/standalone state
     /// persistence. The audio thread never touches this — only the UI
     /// thread (via `toggle_step` / `set_step`) and `initialize()`.
@@ -74,7 +69,6 @@ impl Sequencer {
             host_synced: AtomicBool::new(false),
             display_bpm_milli: AtomicU32::new((DEFAULT_BPM * 1000.0) as u32),
             running_effective: AtomicBool::new(false),
-            transport_probed: AtomicBool::new(false),
             persist_mirror,
             accent_persist_mirror,
         }

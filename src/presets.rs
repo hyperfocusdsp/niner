@@ -17,6 +17,10 @@ use std::path::PathBuf;
 use crate::params::ParamSnapshot;
 use crate::util::paths;
 
+/// Re-exported so integration tests can sandbox the data directory without
+/// `util` becoming part of the crate's public surface.
+pub use crate::util::paths::DATA_DIR_ENV;
+
 /// Current on-disk preset schema version. Bump on breaking changes.
 ///
 /// v2 introduces `ParamSnapshot` as the storage format and adds fields that
@@ -256,9 +260,30 @@ fn persist_hidden_factories(set: &HashSet<String>) {
     }
 }
 
+/// Whether this process may touch the last-used-preset file.
+///
+/// Standalone only. The file is a single global path with no notion of a
+/// project, so a plugin instance must neither read nor write it:
+///
+/// * Reading it and applying the named preset when the editor opens destroys
+///   the parameter values the host already restored from the song.
+/// * Writing it lets a preset picked in one project silently repoint every
+///   other project's sound.
+///
+/// `IS_STANDALONE` is set only by `run_standalone()`, so this is exact.
+/// It replaces an earlier transport-based guess at "am I in a DAW?" that
+/// misfired on any host whose transport was stopped at load time.
+fn last_preset_file_enabled() -> bool {
+    crate::IS_STANDALONE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Remember the name of the last-selected preset so the standalone reopens
 /// with the same choice. Best-effort — IO errors are logged and swallowed.
+/// No-op outside the standalone (see `last_preset_file_enabled`).
 pub fn save_last_preset_name(name: &str) {
+    if !last_preset_file_enabled() {
+        return;
+    }
     let path = paths::niner_last_preset_file();
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
@@ -271,8 +296,12 @@ pub fn save_last_preset_name(name: &str) {
     }
 }
 
-/// Read back the last-selected preset name, if any.
+/// Read back the last-selected preset name, if any. Always `None` outside
+/// the standalone (see `last_preset_file_enabled`).
 pub fn load_last_preset_name() -> Option<String> {
+    if !last_preset_file_enabled() {
+        return None;
+    }
     let path = paths::niner_last_preset_file();
     let data = fs::read_to_string(&path).ok()?;
     let trimmed = data.trim();
